@@ -58,3 +58,9 @@ htmlcov/
 *.pak
 *.dat
 *.pyz
+
+# 项目特定大型文件
+qfluentwidgets/_rc/resource.py
+resource/boqi.gif
+resource/shoko.png
+qfluentwidgets/_rc/images/acrylic/noise.png

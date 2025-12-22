@@ -43,6 +43,10 @@ class Config(QConfig):
 
     # Material
     blurRadius = RangeConfigItem("Material", "AcrylicBlurRadius", 15, RangeValidator(0, 40))
+    
+    # Version
+    currentVersion = ConfigItem("Version", "CurrentVersion", "1.0.1", None)
+    latestVersion = ConfigItem("Version", "LatestVersion", "1.0.1", None)
 
 
 # 创建全局配置对象

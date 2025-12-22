@@ -31,18 +31,18 @@ if %errorlevel% neq 0 (
     echo pyinstaller已安装
 )
 
-REM 获取版本号
+REM 从demo.py中读取VERSION变量
 echo.
-echo 2. 请输入版本号：
-echo 例如：1.0.0
-echo.
-set /p VERSION=版本号：
+echo 2. 从demo.py读取版本号...
+for /f "delims=" %%i in ('python -c "import sys; sys.path.insert(0, '.'); exec(open('demo.py', encoding='utf-8').read()); print(VERSION)"') do set VERSION=%%i
 
 REM 验证版本号格式
 if "%VERSION%"=="" (
-    echo 错误：版本号不能为空
+    echo 错误：版本号不能为空，请在demo.py中定义VERSION变量
     pause
     exit /b 1
+) else (
+    echo 读取到版本号：%VERSION%
 )
 
 REM 清理旧的打包文件

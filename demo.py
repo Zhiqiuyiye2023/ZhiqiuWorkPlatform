@@ -1,6 +1,9 @@
 # coding:utf-8
 import sys
 import os
+
+# 版本号定义
+VERSION = "1.0.1"
 """
 python.exe -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
@@ -69,6 +72,9 @@ from configs.config import cfg
 from interfaces.app_card_interface import AppCardInterface
 from interfaces.home_interface import HomeInterface
 from interfaces.global_search import GlobalSearchDropdown
+
+# 更新配置中的版本号
+cfg.currentVersion.value = VERSION
 # YOLO界面延迟导入，加快启动速度
 
 
@@ -496,7 +502,7 @@ class Window(FluentWindow):
         self.setMinimumSize(1200, 800)
         self.resize(1200, 800)
         self.setWindowIcon(QIcon(':/qfluentwidgets/images/logo.png'))
-        self.setWindowTitle('知秋工作平台')
+        self.setWindowTitle(f'知秋工作平台 v{VERSION}')
         
         # 应用配置中的 Mica 效果设置
         self.setMicaEffectEnabled(cfg.get(cfg.micaEnabled))

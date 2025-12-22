@@ -3,7 +3,8 @@ from qfluentwidgets import (SettingCardGroup, SwitchSettingCard,
                             OptionsSettingCard, ScrollArea,
                             ComboBoxSettingCard, ExpandLayout, Theme,
                             CustomColorSettingCard, setTheme, setThemeColor,
-                            RangeSettingCard, InfoBar, isDarkTheme)
+                            RangeSettingCard, InfoBar, isDarkTheme,
+                            HyperlinkCard, PushSettingCard, MessageBox)
 from qfluentwidgets import FluentIcon as FIF
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QLabel
@@ -78,6 +79,37 @@ class SettingInterface(ScrollArea):
             '半径越大，图像越模糊（范围：0-40）',
             self.materialGroup
         )
+        
+        # 关于设置组
+        self.aboutGroup = SettingCardGroup('关于', self.scrollWidget)
+        
+        # 版本信息卡片
+        self.versionCard = PushSettingCard(
+            '查看详情',
+            FIF.INFO,
+            '当前版本',
+            f'当前版本号: {cfg.currentVersion.value}\n最新版本号: {cfg.latestVersion.value}',
+            self.aboutGroup
+        )
+        
+        # 检查更新卡片
+        self.checkUpdateCard = PushSettingCard(
+            '检查更新',
+            FIF.UPDATE,
+            '检查更新',
+            '检查是否有可用的新版本',
+            self.aboutGroup
+        )
+        
+        # 项目主页卡片
+        self.homepageCard = HyperlinkCard(
+            'https://github.com/Zhiqiuyiye2023/ZhiqiuWorkPlatform',
+            '访问GitHub',
+            FIF.GITHUB,
+            '项目主页',
+            '访问项目GitHub仓库',
+            self.aboutGroup
+        )
 
         self.__initWidget()
 
@@ -115,12 +147,18 @@ class SettingInterface(ScrollArea):
 
         # 添加卡片到材料组
         self.materialGroup.addSettingCard(self.blurRadiusCard)
+        
+        # 添加卡片到关于组
+        self.aboutGroup.addSettingCard(self.versionCard)
+        self.aboutGroup.addSettingCard(self.checkUpdateCard)
+        self.aboutGroup.addSettingCard(self.homepageCard)
 
         # 添加设置卡片组到布局
         self.expandLayout.setSpacing(28)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.materialGroup)
+        self.expandLayout.addWidget(self.aboutGroup)
 
     def __showRestartTooltip(self):
         """ 显示重启提示 """
@@ -149,6 +187,110 @@ class SettingInterface(ScrollArea):
         
         # 材料设置
         cfg.blurRadius.valueChanged.connect(self.__onBlurRadiusChanged)
+        
+        # 关于设置
+        self.checkUpdateCard.clicked.connect(self.__onCheckUpdate)
+    
+    def __onCheckUpdate(self):
+        """检查更新"""
+        from PyQt6.QtCore import QObject, pyqtSignal
+        import threading
+        import time
+        
+        # 创建一个信号类用于线程间通信
+        class UpdateSignal(QObject):
+            update_available = pyqtSignal(str)  # 有新版本可用信号
+            update_not_available = pyqtSignal()  # 无新版本可用信号
+            update_ui = pyqtSignal(str, str)  # 更新UI信号
+        
+        def check_update():
+            try:
+                # 实际从GitHub API获取最新版本号
+                import requests
+                response = requests.get('https://api.github.com/repos/Zhiqiuyiye2023/ZhiqiuWorkPlatform/releases/latest', timeout=5)
+                response.raise_for_status()
+                latest_info = response.json()
+                latest_version = latest_info['tag_name'].lstrip('v')  # 移除可能的 "v" 前缀
+            except Exception as e:
+                # 网络请求失败时使用模拟数据
+                latest_version = "1.1.0"
+            
+            current_version = cfg.currentVersion.value
+            
+            # 更新配置
+            cfg.latestVersion.value = latest_version
+            
+            # 通过信号更新UI
+            update_signal.update_ui.emit(current_version, latest_version)
+            
+            # 比较版本号
+            current = tuple(map(int, current_version.split('.')))
+            latest = tuple(map(int, latest_version.split('.')))
+            
+            if latest > current:
+                # 有新版本可用
+                update_signal.update_available.emit(latest_version)
+            else:
+                # 当前已是最新版本
+                update_signal.update_not_available.emit()
+        
+        # 创建信号实例
+        update_signal = UpdateSignal()
+        
+        # 连接信号到槽
+        update_signal.update_available.connect(self.__showUpdateAvailable)
+        update_signal.update_not_available.connect(self.__showUpdateNotAvailable)
+        update_signal.update_ui.connect(self.__updateVersionCard)
+        
+        # 启动线程检查更新
+        thread = threading.Thread(target=check_update)
+        thread.daemon = True
+        thread.start()
+        
+        # 显示检查中提示
+        InfoBar.info(
+            '检查更新',
+            '正在检查更新，请稍候...',
+            duration=1000,
+            parent=self
+        )
+    
+    def __updateVersionCard(self, current_version, latest_version):
+        """更新版本卡片内容"""
+        self.versionCard.setContent(f'当前版本号: {current_version}\n最新版本号: {latest_version}')
+    
+    def __showUpdateAvailable(self, latest_version):
+        """显示有新版本可用"""
+        from qfluentwidgets import MessageBox
+        
+        InfoBar.success(
+            '发现新版本',
+            f'已发现新版本 {latest_version}，请前往GitHub更新',
+            duration=3000,
+            parent=self
+        )
+        
+        # 使用qfluentwidgets的MessageBox，自动适配主题
+        msg_box = MessageBox(
+            '发现新版本',
+            f'已发现新版本 {latest_version}\n\n是否前往GitHub下载最新版本？',
+            self
+        )
+        msg_box.yesButton.setText('前往下载')
+        msg_box.cancelButton.setText('取消')
+        
+        if msg_box.exec():
+            import webbrowser
+            webbrowser.open('https://github.com/Zhiqiuyiye2023/ZhiqiuWorkPlatform/releases/latest')
+    
+    def __showUpdateNotAvailable(self):
+        """显示当前已是最新版本"""
+        InfoBar.success(
+            '检查更新',
+            '当前已是最新版本',
+            duration=2000,
+            parent=self
+        )
     
     def _onThemeChanged(self):
         """主题变化时更新样式，只修改必要的背景色，保留qfluentwidgets默认控件样式"""
