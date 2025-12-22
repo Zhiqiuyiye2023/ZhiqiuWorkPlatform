@@ -681,7 +681,7 @@ self.group.addSettingCard(self.newCard)
 ![Tests](https://img.shields.io/badge/Tests-5-yellow)
 
 **最后更新**: 2025-12-04  
-**版本**: v1.7  
+**版本**: v1.0.1  
 **状态**: ✅ 活跃开发
 
 ---
