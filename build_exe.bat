@@ -73,7 +73,6 @@ python -m PyInstaller --name="知秋YOLO工具_v%VERSION%" ^
 --hidden-import="PyQt6.QtPrintSupport" ^
 --hidden-import="PyQt6.QtSvg" ^
 --hidden-import="PyQt6.QtXml" ^
---hidden-import="PyQt6.QtNetwork" ^
 --hidden-import="DrissionPage" ^
 --hidden-import="fitz" ^
 --hidden-import="img2pdf" ^

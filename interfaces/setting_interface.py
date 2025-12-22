@@ -3,14 +3,12 @@ from qfluentwidgets import (SettingCardGroup, SwitchSettingCard,
                             OptionsSettingCard, ScrollArea,
                             ComboBoxSettingCard, ExpandLayout, Theme,
                             CustomColorSettingCard, setTheme, setThemeColor,
-                            RangeSettingCard, InfoBar, isDarkTheme,
-                            PrimaryPushSettingCard, MessageBox, ProgressBar)
+                            RangeSettingCard, InfoBar, isDarkTheme)
 from qfluentwidgets import FluentIcon as FIF
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import QWidget, QLabel
 
 from configs.config import cfg, isWin11
-from update_manager import UpdateManager
 
 
 class SettingInterface(ScrollArea):
@@ -80,39 +78,6 @@ class SettingInterface(ScrollArea):
             '半径越大，图像越模糊（范围：0-40）',
             self.materialGroup
         )
-        
-        # 更新设置组
-        self.updateGroup = SettingCardGroup('更新', self.scrollWidget)
-        
-        # 自动更新开关
-        self.autoUpdateCard = SwitchSettingCard(
-            FIF.SYNC,
-            '启动时自动检查更新',
-            '应用程序启动时自动检查GitHub上的新版本',
-            cfg.autoUpdate,
-            self.updateGroup
-        )
-        
-        # 手动检查更新按钮
-        self.checkUpdateCard = PrimaryPushSettingCard(
-            FIF.UPDATE,
-            '检查更新',
-            '手动检查GitHub上是否有可用的新版本',
-            self.updateGroup
-        )
-        
-        # 版本信息标签
-        self.versionLabel = QLabel("当前版本: v1.0.0", self.scrollWidget)
-        self.versionLabel.setStyleSheet("font-size: 14px; color: #666666; background: transparent;")
-        
-        # 初始化更新管理器
-        self.updateManager = UpdateManager("your_username/your_repo", "1.0.0")
-        
-        # 连接更新信号
-        self.updateManager.updateAvailable.connect(self._onUpdateAvailable)
-        self.updateManager.updateNotAvailable.connect(self._onUpdateNotAvailable)
-        self.updateManager.updateProgress.connect(self._onUpdateProgress)
-        self.updateManager.updateFailed.connect(self._onUpdateFailed)
 
         self.__initWidget()
 
@@ -150,30 +115,12 @@ class SettingInterface(ScrollArea):
 
         # 添加卡片到材料组
         self.materialGroup.addSettingCard(self.blurRadiusCard)
-        
-        # 添加卡片到更新组
-        self.updateGroup.addSettingCard(self.autoUpdateCard)
-        self.updateGroup.addSettingCard(self.checkUpdateCard)
 
         # 添加设置卡片组到布局
         self.expandLayout.setSpacing(28)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.materialGroup)
-        self.expandLayout.addWidget(self.updateGroup)
-        
-        # 添加版本信息标签
-        from PyQt6.QtWidgets import QVBoxLayout
-        versionLayout = QVBoxLayout()
-        versionLayout.addSpacing(10)
-        versionLayout.addWidget(self.versionLabel)
-        versionLayout.addSpacing(20)
-        
-        # 创建一个容器来容纳版本信息
-        versionWidget = QWidget(self.scrollWidget)
-        versionWidget.setLayout(versionLayout)
-        versionWidget.setStyleSheet("background: transparent;")
-        self.expandLayout.addWidget(versionWidget)
 
     def __showRestartTooltip(self):
         """ 显示重启提示 """
@@ -202,67 +149,6 @@ class SettingInterface(ScrollArea):
         
         # 材料设置
         cfg.blurRadius.valueChanged.connect(self.__onBlurRadiusChanged)
-        
-        # 更新设置
-        self.checkUpdateCard.clicked.connect(self.updateManager.checkForUpdates)
-    
-    def _onUpdateAvailable(self, version: str, notes: str):
-        """ 发现新版本时的处理 """
-        # 显示更新提示对话框
-        w = MessageBox(
-            '发现新版本',
-            f'发现新版本：v{version}\n\n更新说明：\n{notes}',
-            self
-        )
-        w.yesButton.setText('立即更新')
-        w.cancelButton.setText('稍后更新')
-        
-        if w.exec():
-            # 用户选择立即更新
-            self._showUpdateProgress()
-            self.updateManager.downloadAndUpdate()
-    
-    def _onUpdateNotAvailable(self):
-        """ 没有新版本时的处理 """
-        InfoBar.success(
-            '已是最新版本',
-            '当前应用程序已经是最新版本',
-            duration=2000,
-            parent=self
-        )
-    
-    def _onUpdateProgress(self, progress: int):
-        """ 更新进度处理 """
-        # 如果进度对话框已关闭，则不更新
-        if hasattr(self, '_progressDialog') and self._progressDialog.isVisible():
-            self._progressDialog.setValue(progress)
-    
-    def _onUpdateFailed(self, error: str):
-        """ 更新失败处理 """
-        InfoBar.error(
-            '更新失败',
-            f'检查更新失败：{error}',
-            duration=3000,
-            parent=self
-        )
-        
-        # 关闭进度对话框
-        if hasattr(self, '_progressDialog'):
-            self._progressDialog.close()
-    
-    def _showUpdateProgress(self):
-        """ 显示更新进度对话框 """
-        from qfluentwidgets import ProgressDialog
-        
-        self._progressDialog = ProgressDialog(
-            '正在下载更新',
-            '请稍候...',
-            self
-        )
-        self._progressDialog.setMinimum(0)
-        self._progressDialog.setMaximum(100)
-        self._progressDialog.setValue(0)
-        self._progressDialog.show()
     
     def _onThemeChanged(self):
         """主题变化时更新样式，只修改必要的背景色，保留qfluentwidgets默认控件样式"""

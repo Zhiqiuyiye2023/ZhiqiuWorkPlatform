@@ -43,12 +43,6 @@ class Config(QConfig):
 
     # Material
     blurRadius = RangeConfigItem("Material", "AcrylicBlurRadius", 15, RangeValidator(0, 40))
-    
-    # Update
-    autoUpdate = ConfigItem("Update", "AutoUpdate", True, BoolValidator())
-    themeMode = OptionsConfigItem(
-        "MainWindow", "ThemeMode", Theme.AUTO, OptionsValidator(Theme), restart=True)
-    themeColor = ConfigItem("MainWindow", "ThemeColor", "#0078D4")
 
 
 # 创建全局配置对象

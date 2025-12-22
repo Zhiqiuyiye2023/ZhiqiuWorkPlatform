@@ -466,58 +466,6 @@ class Window(FluentWindow):
         
         # 应用初始主题
         self._onThemeChanged()
-        
-        # 启动时自动检查更新
-        self._checkUpdateOnStartup()
-    
-    def _checkUpdateOnStartup(self):
-        """启动时检查更新"""
-        from update_manager import UpdateManager
-        
-        # 只有在启用了自动更新时才检查
-        if cfg.autoUpdate.value:
-            # 延迟检查，让应用先完全启动
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(1000, self._performUpdateCheck)
-    
-    def _performUpdateCheck(self):
-        """执行更新检查"""
-        from update_manager import UpdateManager
-        from interfaces.setting_interface import SettingInterface
-        
-        # 创建更新管理器实例
-        update_manager = UpdateManager("your_username/your_repo", "1.0.0")
-        
-        # 连接更新信号
-        update_manager.updateAvailable.connect(self._onUpdateAvailable)
-        update_manager.updateNotAvailable.connect(self._onUpdateNotAvailable)
-        update_manager.updateFailed.connect(self._onUpdateFailed)
-        
-        # 执行更新检查
-        update_manager.checkForUpdates()
-    
-    def _onUpdateAvailable(self, version: str, notes: str):
-        """发现新版本时的处理"""
-        from qfluentwidgets import InfoBar, InfoBarPosition
-        
-        # 显示更新提示
-        InfoBar.success(
-            '发现新版本',
-            f'发现新版本：v{version}\n点击前往设置页面更新',
-            duration=3000,
-            position=InfoBarPosition.TOP_RIGHT,
-            parent=self
-        )
-    
-    def _onUpdateNotAvailable(self):
-        """没有新版本时的处理"""
-        # 静默处理，不显示提示
-        pass
-    
-    def _onUpdateFailed(self, error: str):
-        """更新失败时的处理"""
-        # 静默处理，不显示错误提示
-        pass
 
     def initNavigation(self):
         self.addSubInterface(self.homeInterface, FIF.HOME, '主页')
