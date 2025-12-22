@@ -1,0 +1,16 @@
+{
+    "Material": {
+        "AcrylicBlurRadius": 14
+    },
+    "MainWindow": {
+        "DpiScale": "Auto",
+        "Language": "zh_CN",
+        "MicaEnabled": true,
+        "YoloAutoStart": false,
+        "YoloEnable": true
+    },
+    "QFluentWidgets": {
+        "ThemeColor": "#ff0078d4",
+        "ThemeMode": "Dark"
+    }
+}
