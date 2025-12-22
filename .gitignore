@@ -1,0 +1,60 @@
+# 虚拟环境
+venv/
+env/
+
+# 构建产物
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+*.log
+logs/
+
+# 缓存文件
+.cache/
+*.bak
+*.tmp
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+
+# 可执行文件
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Qt相关大型文件
+PyQt6/Qt6/
+
+# 依赖文件
+requirements.txt
+
+# 配置文件
+*.ini
+*.cfg
+*.yaml
+*.yml
+
+# 测试覆盖率
+.coverage
+htmlcov/
+
+# 其他大型文件
+*.pak
+*.dat
+*.pyz
