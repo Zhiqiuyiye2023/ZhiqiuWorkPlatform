@@ -34,7 +34,10 @@ if %errorlevel% neq 0 (
 REM 从demo.py中读取VERSION变量
 echo.
 echo 2. 从demo.py读取版本号...
-for /f "delims=" %%i in ('python -c "import sys; sys.path.insert(0, '.'); exec(open('demo.py', encoding='utf-8').read()); print(VERSION)"') do set VERSION=%%i
+REM 使用Python的ast模块安全解析，只提取VERSION变量，不执行其他代码
+python -c "import ast; tree = ast.parse(open('demo.py', encoding='utf-8').read()); [print(node.value.s) for node in tree.body if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id == 'VERSION'][0]" > version.txt
+set /p VERSION=<version.txt
+del version.txt
 
 REM 验证版本号格式
 if "%VERSION%"=="" (

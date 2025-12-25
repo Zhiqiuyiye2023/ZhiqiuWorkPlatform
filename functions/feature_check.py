@@ -413,20 +413,32 @@ class FeatureCheckFunction(BaseFunction):
         input_group = QGroupBox("输入选择")
         input_layout = QVBoxLayout(input_group)
         
-        # 文件路径选择
+        # 批量检测选项
+        batch_layout = QHBoxLayout()
+        self.batch_check = SwitchButton(self)
+        batch_layout.addWidget(QLabel("批量检测："))
+        batch_layout.addWidget(self.batch_check)
+        batch_layout.addStretch(1)
+        
+        input_layout.addLayout(batch_layout)
+        
+        # 文件/文件夹路径选择
         file_layout = QHBoxLayout()
-        file_label = QLabel("文件路径：")
+        file_label = QLabel("路径：")
         self.file_edit = LineEdit()
-        self.file_edit.setPlaceholderText("请输入文件路径或点击浏览选择")
+        self.file_edit.setPlaceholderText("请输入文件/文件夹路径或点击浏览选择")
         self.shp_browse_btn = PushButton("浏览SHP", self, FluentIcon.DOCUMENT)
         self.shp_browse_btn.clicked.connect(self._browse_shp)
         self.gdb_browse_btn = PushButton("浏览GDB", self, FluentIcon.FOLDER)
         self.gdb_browse_btn.clicked.connect(self._browse_gdb)
+        self.folder_browse_btn = PushButton("浏览文件夹", self, FluentIcon.FOLDER)
+        self.folder_browse_btn.clicked.connect(self._browse_folder)
         
         file_layout.addWidget(file_label)
         file_layout.addWidget(self.file_edit)
         file_layout.addWidget(self.shp_browse_btn)
         file_layout.addWidget(self.gdb_browse_btn)
+        file_layout.addWidget(self.folder_browse_btn)
         
         # 图层选择（仅GDB文件需要）
         layer_layout = QHBoxLayout()
@@ -635,6 +647,17 @@ class FeatureCheckFunction(BaseFunction):
             self.layer_label.setVisible(True)
             self.layer_combo.setVisible(True)
     
+    def _browse_folder(self):
+        """浏览文件夹"""
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "选择文件夹", "."
+        )
+        if folder_path:
+            self.file_edit.setText(folder_path)
+            # 批量检测模式下，隐藏图层选择控件
+            self.layer_label.setVisible(False)
+            self.layer_combo.setVisible(False)
+    
     def _on_file_path_changed(self, file_path):
         """文件路径改变时更新图层列表"""
         self.layer_combo.clear()
@@ -695,11 +718,11 @@ class FeatureCheckFunction(BaseFunction):
         # 验证输入
         input_path = self.file_edit.text()
         
-        # 检查是否选择了输入文件
+        # 检查是否选择了输入路径
         if not input_path:
             InfoBar.warning(
                 title="警告",
-                content="请选择文件路径",
+                content="请选择文件/文件夹路径",
                 parent=self,
                 position=InfoBarPosition.TOP_RIGHT
             )
@@ -732,23 +755,6 @@ class FeatureCheckFunction(BaseFunction):
             )
             return
         
-        # 确定图层名称
-        layer_name = None
-        is_gdb = input_path.endswith('.gdb')
-        
-        # 如果是GDB文件，检查是否选择了图层
-        if is_gdb:
-            if self.layer_combo.currentIndex() == -1:
-                InfoBar.warning(
-                    title="警告",
-                    content="请选择图层",
-                    parent=self,
-                    position=InfoBarPosition.TOP_RIGHT
-                )
-                return
-            # 使用currentText()获取当前选择的图层名称，更可靠
-            layer_name = self.layer_combo.currentText()
-        
         # 初始化UI
         self.execute_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
@@ -769,14 +775,91 @@ class FeatureCheckFunction(BaseFunction):
         self.result_gdfs.clear()
         self.save_btn.setEnabled(False)
         
-        # 启动检查线程
-        self.worker = FeatureCheckWorker(input_path, self.check_items, layer_name, check_params)
-        self.worker.progress_updated.connect(lambda value: self._update_progress(value, "主检查进度"))
-        self.worker.overlap_progress_updated.connect(lambda value: self._update_progress(value, "面面相叠检查进度"))
-        self.worker.result_progress_updated.connect(lambda value: self._update_progress(value, "结果生成进度"))
-        self.worker.check_completed.connect(self._on_check_completed)
-        self.worker.error_occurred.connect(self._on_error)
-        self.worker.start()
+        # 判断是否为批量检测
+        if self.batch_check.isChecked():
+            # 批量检测模式
+            self._execute_batch_check(input_path, check_params)
+        else:
+            # 单文件检测模式
+            # 确定图层名称
+            layer_name = None
+            is_gdb = input_path.endswith('.gdb')
+            
+            # 如果是GDB文件，检查是否选择了图层
+            if is_gdb:
+                if self.layer_combo.currentIndex() == -1:
+                    InfoBar.warning(
+                        title="警告",
+                        content="请选择图层",
+                        parent=self,
+                        position=InfoBarPosition.TOP_RIGHT
+                    )
+                    self._reset_ui()
+                    return
+                # 使用currentText()获取当前选择的图层名称，更可靠
+                layer_name = self.layer_combo.currentText()
+            
+            # 启动检查线程
+            self.worker = FeatureCheckWorker(input_path, self.check_items, layer_name, check_params)
+            self.worker.progress_updated.connect(lambda value: self._update_progress(value, "主检查进度"))
+            self.worker.overlap_progress_updated.connect(lambda value: self._update_progress(value, "面面相叠检查进度"))
+            self.worker.result_progress_updated.connect(lambda value: self._update_progress(value, "结果生成进度"))
+            self.worker.check_completed.connect(self._on_check_completed)
+            self.worker.error_occurred.connect(self._on_error)
+            self.worker.start()
+    
+    def _execute_batch_check(self, folder_path, check_params):
+        """执行批量检测"""
+        # 遍历文件夹下所有shp和gdb文件
+        file_list = []
+        
+        for root, dirs, files in os.walk(folder_path):
+            # 处理gdb文件
+            for dir_name in dirs:
+                if dir_name.endswith('.gdb'):
+                    gdb_path = os.path.join(root, dir_name)
+                    # 获取gdb中的所有图层
+                    try:
+                        import fiona
+                        with fiona.Env():
+                            layer_names = fiona.listlayers(gdb_path)
+                        for layer_name in layer_names:
+                            file_list.append((gdb_path, layer_name))
+                    except Exception as e:
+                        InfoBar.warning(
+                            title="警告",
+                            content=f"无法读取GDB文件 {gdb_path}: {str(e)}",
+                            parent=self,
+                            position=InfoBarPosition.TOP_RIGHT
+                        )
+            
+            # 处理shp文件
+            for file_name in files:
+                if file_name.endswith('.shp'):
+                    shp_path = os.path.join(root, file_name)
+                    file_list.append((shp_path, None))
+        
+        if not file_list:
+            InfoBar.warning(
+                title="警告",
+                content="文件夹中未找到SHP或GDB文件",
+                parent=self,
+                position=InfoBarPosition.TOP_RIGHT
+            )
+            self._reset_ui()
+            return
+        
+        # 初始化批量结果
+        self.batch_results = []
+        self.total_files = len(file_list)
+        self.processed_files = 0
+        
+        # 显示文件处理进度
+        self.progress_bar.setFormat(f"准备处理 {self.total_files} 个文件...")
+        
+        # 处理第一个文件
+        self.current_file_index = 0
+        self._process_next_file(file_list, check_params)
     
     def _cancel_check(self):
         """取消检查"""
@@ -785,8 +868,112 @@ class FeatureCheckFunction(BaseFunction):
             self.worker.wait()
         self._reset_ui()
     
+    def _process_next_file(self, file_list, check_params):
+        """处理下一个文件"""
+        if self.current_file_index >= self.total_files:
+            # 所有文件处理完成
+            self._on_batch_check_completed()
+            return
+        
+        # 获取当前要处理的文件
+        input_path, layer_name = file_list[self.current_file_index]
+        self.current_file_index += 1
+        
+        # 更新进度
+        file_progress = int(self.current_file_index / self.total_files * 100)
+        self.progress_bar.setValue(file_progress)
+        
+        # 显示当前处理的文件信息
+        if layer_name:
+            # GDB图层
+            file_info = f"处理 {os.path.basename(input_path)} - {layer_name}"
+        else:
+            # SHP文件
+            file_info = f"处理 {os.path.basename(input_path)}"
+        
+        self.progress_bar.setFormat(f"{file_info} ({self.current_file_index}/{self.total_files})")
+        
+        # 启动检查线程
+        self.worker = FeatureCheckWorker(input_path, self.check_items, layer_name, check_params)
+        self.worker.progress_updated.connect(lambda value: self._update_progress(value, f"{file_info} - 主检查进度"))
+        self.worker.overlap_progress_updated.connect(lambda value: self._update_progress(value, f"{file_info} - 面面相叠检查进度"))
+        self.worker.result_progress_updated.connect(lambda value: self._update_progress(value, f"{file_info} - 结果生成进度"))
+        self.worker.check_completed.connect(lambda result_gdfs: self._on_file_check_completed(result_gdfs, input_path, layer_name, file_list, check_params))
+        self.worker.error_occurred.connect(lambda error_msg: self._on_file_error(error_msg, input_path, layer_name, file_list, check_params))
+        self.worker.start()
+    
+    def _on_file_check_completed(self, result_gdfs, input_path, layer_name, file_list, check_params):
+        """单个文件检查完成"""
+        # 保存当前文件的结果
+        if layer_name:
+            # GDB图层
+            file_key = f"{os.path.basename(input_path)}_{layer_name}"
+        else:
+            # SHP文件
+            file_key = os.path.basename(input_path)
+        
+        self.batch_results.append((file_key, result_gdfs))
+        
+        # 处理下一个文件
+        self._process_next_file(file_list, check_params)
+    
+    def _on_file_error(self, error_msg, input_path, layer_name, file_list, check_params):
+        """单个文件检查错误"""
+        # 记录错误信息
+        if layer_name:
+            # GDB图层
+            file_info = f"{os.path.basename(input_path)} - {layer_name}"
+        else:
+            # SHP文件
+            file_info = os.path.basename(input_path)
+        
+        InfoBar.error(
+            title="错误",
+            content=f"处理 {file_info} 失败: {error_msg}",
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT
+        )
+        
+        # 继续处理下一个文件
+        self._process_next_file(file_list, check_params)
+    
+    def _on_batch_check_completed(self):
+        """批量检查完成"""
+        # 更新结果列表
+        self.result_list.clear()
+        
+        total_errors = 0
+        for file_key, result_gdfs in self.batch_results:
+            if result_gdfs:
+                item = QListWidgetItem(f"{file_key}:")
+                item.setForeground(Qt.GlobalColor.blue)
+                self.result_list.addItem(item)
+                
+                for check_type, gdf in result_gdfs.items():
+                    count = len(gdf)
+                    if count > 0:
+                        total_errors += count
+                        sub_item = QListWidgetItem(f"  - {check_type}: {count} 个要素")
+                        self.result_list.addItem(sub_item)
+            else:
+                item = QListWidgetItem(f"{file_key}: 无异常要素")
+                item.setForeground(Qt.GlobalColor.green)
+                self.result_list.addItem(item)
+        
+        InfoBar.success(
+            title="成功",
+            content=f"批量检查完成，共处理 {self.total_files} 个文件，发现 {total_errors} 个异常要素",
+            parent=self,
+            position=InfoBarPosition.TOP_RIGHT
+        )
+        
+        if total_errors > 0:
+            self.save_btn.setEnabled(True)
+        
+        self._reset_ui()
+    
     def _on_check_completed(self, result_gdfs):
-        """检查完成"""
+        """单个文件检查完成"""
         self.result_gdfs = result_gdfs
         
         # 更新结果列表
@@ -815,7 +1002,7 @@ class FeatureCheckFunction(BaseFunction):
         self._reset_ui()
     
     def _on_error(self, error_msg):
-        """错误处理"""
+        """单个文件错误处理"""
         InfoBar.error(
             title="错误",
             content=f"检查失败: {error_msg}",
@@ -846,8 +1033,14 @@ class FeatureCheckFunction(BaseFunction):
     
     def _save_results(self):
         """保存结果"""
-        if not self.result_gdfs:
-            return
+        if self.batch_check.isChecked():
+            # 批量检测结果保存
+            if not self.batch_results:
+                return
+        else:
+            # 单文件检测结果保存
+            if not self.result_gdfs:
+                return
         
         # 选择保存目录
         save_dir = QFileDialog.getExistingDirectory(self, "选择保存目录", ".")
@@ -858,28 +1051,59 @@ class FeatureCheckFunction(BaseFunction):
             import datetime
             # 获取当前日期时间，格式：YYYYMMDD_HHMMSS
             current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = os.path.splitext(os.path.basename(self.input_path))[0]
             
-            for check_type, gdf in self.result_gdfs.items():
-                # 生成文件名，包含日期时间
-                output_name = f"{base_name}_{check_type}_{current_time}.shp"
-                output_path = os.path.join(save_dir, output_name)
+            if self.batch_check.isChecked():
+                # 批量检测结果保存
+                for file_key, result_gdfs in self.batch_results:
+                    if result_gdfs:
+                        # 为每个文件创建一个子目录
+                        file_dir = os.path.join(save_dir, f"{file_key}_{current_time}")
+                        os.makedirs(file_dir, exist_ok=True)
+                        
+                        for check_type, gdf in result_gdfs.items():
+                            # 生成文件名，包含日期时间
+                            output_name = f"{file_key}_{check_type}.shp"
+                            output_path = os.path.join(file_dir, output_name)
+                            
+                            # 只保留几何信息，不继承原始属性字段
+                            gdf_copy = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs)
+                            
+                            # 删除可能存在的旧文件（解决文件被占用问题）
+                            import glob
+                            for ext in ['.shp', '.shx', '.dbf', '.prj', '.cpg']:
+                                old_file = output_path.replace('.shp', ext)
+                                if os.path.exists(old_file):
+                                    try:
+                                        os.remove(old_file)
+                                    except:
+                                        pass
+                            
+                            # 保存为SHP文件，使用GBK编码处理中文文件名
+                            gdf_copy.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
+            else:
+                # 单文件检测结果保存
+                base_name = os.path.splitext(os.path.basename(self.file_edit.text()))[0]
                 
-                # 只保留几何信息，不继承原始属性字段
-                gdf_copy = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs)
-                
-                # 删除可能存在的旧文件（解决文件被占用问题）
-                import glob
-                for ext in ['.shp', '.shx', '.dbf', '.prj', '.cpg']:
-                    old_file = output_path.replace('.shp', ext)
-                    if os.path.exists(old_file):
-                        try:
-                            os.remove(old_file)
-                        except:
-                            pass
-                
-                # 保存为SHP文件，使用GBK编码处理中文文件名
-                gdf_copy.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
+                for check_type, gdf in self.result_gdfs.items():
+                    # 生成文件名，包含日期时间
+                    output_name = f"{base_name}_{check_type}_{current_time}.shp"
+                    output_path = os.path.join(save_dir, output_name)
+                    
+                    # 只保留几何信息，不继承原始属性字段
+                    gdf_copy = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs)
+                    
+                    # 删除可能存在的旧文件（解决文件被占用问题）
+                    import glob
+                    for ext in ['.shp', '.shx', '.dbf', '.prj', '.cpg']:
+                        old_file = output_path.replace('.shp', ext)
+                        if os.path.exists(old_file):
+                            try:
+                                os.remove(old_file)
+                            except:
+                                pass
+                    
+                    # 保存为SHP文件，使用GBK编码处理中文文件名
+                    gdf_copy.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
             
             InfoBar.success(
                 title="成功",
