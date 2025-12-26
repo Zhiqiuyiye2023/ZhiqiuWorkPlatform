@@ -3,7 +3,7 @@ import sys
 import os
 
 # 版本号定义
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 """
 python.exe -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
@@ -451,6 +451,10 @@ class Window(FluentWindow):
         # 加载自动化工具界面
         from interfaces.automation_tool_interface import AutomationToolInterface
         self.automationToolInterface = AutomationToolInterface(self)
+        
+        # 加载新闻分析器界面
+        from interfaces.news_analyzer_interface import NewsAnalyzerInterface
+        self.newsAnalyzerInterface = NewsAnalyzerInterface(self)
 
         # 启用 acrylic 效果
         self.navigationInterface.setAcrylicEnabled(True)
@@ -482,9 +486,10 @@ class Window(FluentWindow):
         
         # 添加自动化工具界面
         self.addSubInterface(self.automationToolInterface, FIF.FIT_PAGE, '自动化工具')
-
-
         
+        # 添加新闻分析器界面
+        self.addSubInterface(self.newsAnalyzerInterface, FIF.MESSAGE, '新闻分析器')
+
         # 添加设置界面
         self.addSubInterface(self.settingInterface, FIF.SETTING, '设置', NavigationItemPosition.BOTTOM)
         
@@ -620,6 +625,13 @@ class Window(FluentWindow):
         if hasattr(self, 'gisWorkflowInterface'):
             gis_workflow = self.gisWorkflowInterface
             update_theme_method = getattr(gis_workflow, 'updateTheme', None)
+            if update_theme_method is not None:
+                update_theme_method()
+        
+        # 通知新闻分析器界面更新主题
+        if hasattr(self, 'newsAnalyzerInterface'):
+            news_analyzer = self.newsAnalyzerInterface
+            update_theme_method = getattr(news_analyzer, 'updateTheme', None)
             if update_theme_method is not None:
                 update_theme_method()
         

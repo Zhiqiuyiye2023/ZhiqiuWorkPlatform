@@ -116,6 +116,7 @@ pip install -r requirements.txt
 | 🎬 **视频** | 视频处理功能 | 视频相关工具 |
 | 🌍 **GIS工作流** | 拖拽式GIS数据处理 | 类似于FME的工作流设计 |
 | 🤖 **自动化工具** | 浏览器自动化功能 | 基于DrissionPage的自动化操作 |
+| 💬 **新闻分析器** | 新闻收集与AI分析 | 自动收集新闻并进行AI分析 |
 | 📚 **库** | 资源库 | 存储和管理资源 |
 | ⚙️ **设置** | 个性化配置、主题管理 | 可视化设置中心 |
 | 🔍 **全局搜索** | 应用快速查找 | 支持拼音搜索 |
@@ -410,6 +411,8 @@ GIS工作流功能提供了一个类似于FME的拖拽式GIS数据处理环境�
 │  🤖 YOLO工具箱      │
 │  🎬 视频            │
 │  🌍 GIS工作流       │
+│  🤖 自动化工具      │
+│  💬 新闻分析器      │
 │  📚 库              │
 │  ⚙️ 设置            │
 │  ❓ 帮助            │
@@ -478,7 +481,8 @@ GIS工作流功能提供了一个类似于FME的拖拽式GIS数据处理环境�
 │   ├── 📄 app_card_interface.py  # 应用卡片界面
 │   ├── 📄 global_search.py       # 全局搜索功能
 │   ├── 📄 gis_workflow_interface.py  # GIS工作流界面
-│   └── 📄 automation_tool_interface.py  # 自动化工具界面
+│   ├── 📄 automation_tool_interface.py  # 自动化工具界面
+│   └── 📄 news_analyzer_interface.py  # 新闻分析器界面
 ├── 📁 configs/                   # 配置文件目录
 │   ├── 📄 config.py              # 配置管理
 │   ├── 📄 config.json            # 配置文件（自动生成）
