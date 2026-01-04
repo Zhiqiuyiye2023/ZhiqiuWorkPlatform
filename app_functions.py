@@ -176,6 +176,102 @@ class FunctionWidgetFactory:
                     module = importlib.import_module('functions.feature_check')
                     FeatureCheckFunction = getattr(module, 'FeatureCheckFunction')
                     return FeatureCheckFunction()
+            
+            elif app_id == 'fix_sharp_angle':
+                try:
+                    from functions.fix_sharp_angle import FixSharpAngleFunction
+                    return FixSharpAngleFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.fix_sharp_angle')
+                    FixSharpAngleFunction = getattr(module, 'FixSharpAngleFunction')
+                    return FixSharpAngleFunction()
+            
+            elif app_id == 'eliminate_features':
+                try:
+                    from functions.eliminate_features import EliminateFeaturesFunction
+                    return EliminateFeaturesFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.eliminate_features')
+                    EliminateFeaturesFunction = getattr(module, 'EliminateFeaturesFunction')
+                    return EliminateFeaturesFunction()
+            
+            elif app_id == 'polygon_to_line':
+                try:
+                    from functions.polygon_to_line import PolygonToLineFunction
+                    return PolygonToLineFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.polygon_to_line')
+                    PolygonToLineFunction = getattr(module, 'PolygonToLineFunction')
+                    return PolygonToLineFunction()
+            
+            elif app_id == 'change_map_tool':
+                try:
+                    from functions.change_map_tool import ChangeMapToolFunction
+                    return ChangeMapToolFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.change_map_tool')
+                    ChangeMapToolFunction = getattr(module, 'ChangeMapToolFunction')
+                    return ChangeMapToolFunction()
+            
+            elif app_id == 'organize_fields':
+                try:
+                    from functions.organize_fields import OrganizeFieldsFunction
+                    return OrganizeFieldsFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.organize_fields')
+                    OrganizeFieldsFunction = getattr(module, 'OrganizeFieldsFunction')
+                    return OrganizeFieldsFunction()
+            
+            elif app_id == 'spatial_join_fields':
+                try:
+                    from functions.spatial_join_fields import SpatialJoinFieldsFunction
+                    return SpatialJoinFieldsFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.spatial_join_fields')
+                    SpatialJoinFieldsFunction = getattr(module, 'SpatialJoinFieldsFunction')
+                    return SpatialJoinFieldsFunction()
+            
+            elif app_id == 'eliminate_overlap':
+                try:
+                    from functions.eliminate_overlap import EliminateOverlapFunction
+                    return EliminateOverlapFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.eliminate_overlap')
+                    EliminateOverlapFunction = getattr(module, 'EliminateOverlapFunction')
+                    return EliminateOverlapFunction()
+            
+            elif app_id == 'feature_intersection':
+                try:
+                    from functions.feature_intersection import FeatureIntersectionFunction
+                    return FeatureIntersectionFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.feature_intersection')
+                    FeatureIntersectionFunction = getattr(module, 'FeatureIntersectionFunction')
+                    return FeatureIntersectionFunction()
                 
             # 文件处理功能
             elif app_id == 'file_stat':

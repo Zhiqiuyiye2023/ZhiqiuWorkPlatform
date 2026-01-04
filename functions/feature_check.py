@@ -34,14 +34,30 @@ class FeatureCheckWorker(QThread):
             # 读取要素
             if self.layer_name:
                 # GDB图层
-                gdf = gpd.read_file(self.input_path, layer=self.layer_name)
+                try:
+                    gdf = gpd.read_file(self.input_path, layer=self.layer_name)
+                except Exception as e:
+                    self.error_occurred.emit(f"读取GDB图层 '{self.layer_name}' 失败: {str(e)}")
+                    return
             else:
                 # SHP文件
-                gdf = gpd.read_file(self.input_path)
+                try:
+                    gdf = gpd.read_file(self.input_path)
+                except Exception as e:
+                    self.error_occurred.emit(f"读取SHP文件失败: {str(e)}")
+                    return
+            
+            # 验证读取结果
+            if gdf is None:
+                self.error_occurred.emit("文件读取失败，未返回有效的GeoDataFrame")
+                return
             
             total_features = len(gdf)
             if total_features == 0:
-                self.error_occurred.emit("没有找到要素")
+                if self.layer_name:
+                    self.error_occurred.emit(f"图层 '{self.layer_name}' 中没有找到要素")
+                else:
+                    self.error_occurred.emit("文件中没有找到要素")
                 return
             
             # 初始化结果字典
@@ -71,8 +87,9 @@ class FeatureCheckWorker(QThread):
                 
                 # 狭长检查
                 if 'narrow' in self.check_items:
-                    if self._check_narrow(geometry):
-                        results['narrow'].append(idx)
+                    is_narrow, aspect_ratio = self._check_narrow(geometry)
+                    if is_narrow:
+                        results['narrow'].append((idx, aspect_ratio))
                 
                 # 环岛图斑检查
                 if 'roundabout' in self.check_items:
@@ -180,7 +197,15 @@ class FeatureCheckWorker(QThread):
                     # 尖锐角结果单独处理，生成夹角线
                     continue
                 elif check_type != 'overlap' and indices:
-                    result_gdfs[check_type] = gdf.iloc[indices].copy()
+                    if check_type == 'narrow':
+                        # 处理狭长结果，添加宽长比字段
+                        narrow_indices = [idx for idx, _ in indices]
+                        narrow_gdf = gdf.iloc[narrow_indices].copy()
+                        narrow_gdf['阈值'] = [aspect_ratio for _, aspect_ratio in indices]
+                        result_gdfs[check_type] = narrow_gdf
+                    else:
+                        # 其他结果直接复制
+                        result_gdfs[check_type] = gdf.iloc[indices].copy()
                     processed_types += 1
                     # 更新结果生成进度
                     progress = int(processed_types / total_result_types * 100)
@@ -195,8 +220,10 @@ class FeatureCheckWorker(QThread):
             
             # 处理尖锐角结果（生成夹角线）
             if sharp_angle_lines and 'sharp_angle' in self.check_items:
-                # 创建只包含夹角线的GeoDataFrame
-                sharp_angle_gdf = gpd.GeoDataFrame(geometry=sharp_angle_lines, crs=gdf.crs)
+                # 创建包含夹角线和角度值的GeoDataFrame
+                angles = [angle for angle, _ in sharp_angle_lines]
+                lines = [line for _, line in sharp_angle_lines]
+                sharp_angle_gdf = gpd.GeoDataFrame({'阈值': angles, 'geometry': lines}, crs=gdf.crs)
                 result_gdfs['sharp_angle'] = sharp_angle_gdf
                 processed_types += 1
             
@@ -211,14 +238,14 @@ class FeatureCheckWorker(QThread):
 
     
     def _check_narrow(self, geometry):
-        """检查狭长面（通过宽长比判断）"""
+        """检查狭长面（通过宽长比判断）并返回宽长比"""
         # 获取阈值，默认0.2
         threshold = self.check_params.get('narrow_threshold', 0.2)
         
         if isinstance(geometry, Polygon):
             min_rect = geometry.minimum_rotated_rectangle
             if min_rect.area == 0:
-                return False
+                return False, 0
             # 计算宽长比
             coords = list(min_rect.exterior.coords)
             if len(coords) >= 5:
@@ -231,13 +258,14 @@ class FeatureCheckWorker(QThread):
                 if length > 0:
                     aspect_ratio = width / length
                     # 宽长比小于阈值视为狭长
-                    return aspect_ratio < threshold
+                    return aspect_ratio < threshold, aspect_ratio
         elif isinstance(geometry, MultiPolygon):
             # 对每个多边形进行检查
             for poly in geometry.geoms:
-                if self._check_narrow(poly):
-                    return True
-        return False
+                is_narrow, aspect_ratio = self._check_narrow(poly)
+                if is_narrow:
+                    return True, aspect_ratio
+        return False, 0
     
     def _check_roundabout(self, geometry):
         """检查环岛图斑（具有多个内部环的多边形）"""
@@ -253,7 +281,7 @@ class FeatureCheckWorker(QThread):
         return False
     
     def _check_sharp_angle(self, geometry):
-        """检查尖锐角（小于阈值的内角）并返回两根线组成的角度要素"""
+        """检查尖锐角（小于阈值的内角）并返回包含角度值和两根线组成的角度要素"""
         # 获取阈值，默认30度
         threshold = self.check_params.get('sharp_angle_threshold', 30.0)
         
@@ -302,6 +330,9 @@ class FeatureCheckWorker(QThread):
                 
                 # 检查夹角是否小于阈值
                 if angle < threshold_rad:
+                    # 将弧度转换为角度
+                    angle_deg = math.degrees(angle)
+                    
                     # 计算向量的单位向量
                     unit_vec1 = (vec1[0]/len1, vec1[1]/len1)
                     unit_vec2 = (vec2[0]/len2, vec2[1]/len2)
@@ -321,9 +352,9 @@ class FeatureCheckWorker(QThread):
                     line2_end = (curr_point_2d[0] + unit_vec2[0] * extend_dist, curr_point_2d[1] + unit_vec2[1] * extend_dist)
                     line2 = LineString([curr_point_2d, line2_end])
                     
-                    # 添加这两根线到结果列表
-                    sharp_angles.append(line1)
-                    sharp_angles.append(line2)
+                    # 添加这两根线和角度值到结果列表
+                    sharp_angles.append((angle_deg, line1))
+                    sharp_angles.append((angle_deg, line2))
             
             # 检查内部环（孔洞）
             for interior in geometry.interiors:
@@ -356,6 +387,9 @@ class FeatureCheckWorker(QThread):
                     angle = math.acos(cos_angle)
                     
                     if angle < threshold_rad:
+                        # 将弧度转换为角度
+                        angle_deg = math.degrees(angle)
+                        
                         # 计算向量的单位向量
                         unit_vec1 = (vec1[0]/len1, vec1[1]/len1)
                         unit_vec2 = (vec2[0]/len2, vec2[1]/len2)
@@ -375,9 +409,9 @@ class FeatureCheckWorker(QThread):
                         line2_end = (curr_point_2d[0] + unit_vec2[0] * extend_dist, curr_point_2d[1] + unit_vec2[1] * extend_dist)
                         line2 = LineString([curr_point_2d, line2_end])
                         
-                        # 添加这两根线到结果列表
-                        sharp_angles.append(line1)
-                        sharp_angles.append(line2)
+                        # 添加这两根线和角度值到结果列表
+                        sharp_angles.append((angle_deg, line1))
+                        sharp_angles.append((angle_deg, line2))
         elif isinstance(geometry, MultiPolygon):
             # 对每个多边形进行检查
             for poly in geometry.geoms:
@@ -673,9 +707,20 @@ class FeatureCheckFunction(BaseFunction):
                 with fiona.Env():
                     layer_names = fiona.listlayers(file_path)
                 
+                if not layer_names:
+                    InfoBar.warning(
+                        title="警告",
+                        content=f"GDB文件 '{file_path}' 中没有找到任何图层",
+                        parent=self,
+                        position=InfoBarPosition.TOP_RIGHT
+                    )
+                    return
+                
                 for layer_name in layer_names:
                     self.layer_combo.addItem(layer_name, layer_name)
-                self.layer_combo.setEnabled(len(layer_names) > 0)
+                self.layer_combo.setEnabled(True)
+                # 默认选择第一个图层
+                self.layer_combo.setCurrentIndex(0)
             except Exception as e:
                 InfoBar.error(
                     title="错误",
@@ -823,6 +868,16 @@ class FeatureCheckFunction(BaseFunction):
                         import fiona
                         with fiona.Env():
                             layer_names = fiona.listlayers(gdb_path)
+                        
+                        if not layer_names:
+                            InfoBar.warning(
+                                title="警告",
+                                content=f"GDB文件 {gdb_path} 中没有找到任何图层",
+                                parent=self,
+                                position=InfoBarPosition.TOP_RIGHT
+                            )
+                            continue
+                        
                         for layer_name in layer_names:
                             file_list.append((gdb_path, layer_name))
                     except Exception as e:
@@ -1065,8 +1120,8 @@ class FeatureCheckFunction(BaseFunction):
                             output_name = f"{file_key}_{check_type}.shp"
                             output_path = os.path.join(file_dir, output_name)
                             
-                            # 只保留几何信息，不继承原始属性字段
-                            gdf_copy = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs)
+                            # 保留所有属性字段，包括阈值字段
+                            gdf_copy = gdf.copy()
                             
                             # 删除可能存在的旧文件（解决文件被占用问题）
                             import glob
@@ -1089,8 +1144,8 @@ class FeatureCheckFunction(BaseFunction):
                     output_name = f"{base_name}_{check_type}_{current_time}.shp"
                     output_path = os.path.join(save_dir, output_name)
                     
-                    # 只保留几何信息，不继承原始属性字段
-                    gdf_copy = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs)
+                    # 保留所有属性字段，包括阈值字段
+                    gdf_copy = gdf.copy()
                     
                     # 删除可能存在的旧文件（解决文件被占用问题）
                     import glob

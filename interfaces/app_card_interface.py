@@ -15,35 +15,37 @@ class AppCard(CardWidget):
     def __init__(self, app_id: str, icon, title: str, description: str, parent=None):
         super().__init__(parent)
         self.app_id = app_id
-        self.setFixedSize(220, 110)  # 调整卡片尺寸，提供更多空间
+        self.setFixedSize(200, 90)  # 减小卡片尺寸，使其更紧凑
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # 创建布局
         self.vBoxLayout = QVBoxLayout(self)
-        self.vBoxLayout.setContentsMargins(15, 15, 15, 15)  # 调整边距
-        self.vBoxLayout.setSpacing(4)  # 减小整体间距，后续通过添加spacer精细控制
+        self.vBoxLayout.setContentsMargins(12, 12, 12, 12)  # 调整边距，减小内边距
+        self.vBoxLayout.setSpacing(0)  # 重置整体间距，通过spacer精确控制
         
         # 图标
         self.iconWidget = IconWidget(icon, self)
-        self.iconWidget.setFixedSize(32, 32)  # 调整图标大小
+        self.iconWidget.setFixedSize(24, 24)  # 减小图标大小，更适合紧凑布局
         
         # 标题
         self.titleLabel = BodyLabel(title, self)
-        self.titleLabel.setFont(QFont('Microsoft YaHei', 12, QFont.Weight.Bold))  # 调整字体大小和粗细
-        self.titleLabel.setWordWrap(False)  # 标题不换行
+        self.titleLabel.setFont(QFont('Microsoft YaHei', 10, QFont.Weight.DemiBold))  # 保持字体大小
+        self.titleLabel.setWordWrap(True)  # 标题允许换行
+        self.titleLabel.setMaximumHeight(22)  # 调整标题高度
         
         # 描述
         self.descLabel = CaptionLabel(description, self)
         self.descLabel.setWordWrap(True)  # 描述允许换行
-        self.descLabel.setFixedHeight(36)  # 调整描述区域高度
+        self.descLabel.setFixedHeight(30)  # 减小描述区域高度
+        self.descLabel.setStyleSheet("QLabel { font-size: 8px; line-height: 12px; }")  # 调整描述字体大小和行高
         
         # 添加到布局
         self.vBoxLayout.addWidget(self.iconWidget, 0, Qt.AlignmentFlag.AlignLeft)
-        # 添加一个小的spacer来增加图标与标题之间的距离
+        # 图标与标题之间的间距
         self.vBoxLayout.addSpacing(8)
         self.vBoxLayout.addWidget(self.titleLabel)
-        # 减少标题与描述之间的距离
-        self.vBoxLayout.addSpacing(2)
+        # 标题与描述之间的间距
+        self.vBoxLayout.addSpacing(6)
         self.vBoxLayout.addWidget(self.descLabel)
         self.vBoxLayout.addStretch(1)
         
@@ -156,56 +158,64 @@ class AppCardInterface(ScrollArea):
         self.allApps = [
             # 矢量处理类
             ('vector', '矢量处理', [
-                ('data_overlay', FIF.TILES, '数据叠加套合', '计算两个矢量数据集的套合占比'),
-                ('field_split', FIF.CUT, '字段分离要素', '根据字段值分离矢量要素'),
-                ('area_adjust', FIF.ZOOM, '面积调整要素', '根据指定面积缓冲调整要素'),
-                ('merge_features', FIF.ACCEPT, '合并要素', '合并目录中所有要素'),
-                ('dissolve_features', FIF.ACCEPT, '融合要素', '融合目录中所有要素，将相同类型的要素合并为一个'),
-                ('identify_features', FIF.MARKET, '标识卡片', '支持添加两个图层，可拖拽SHP文件到列表中，支持调整图层顺序'),
+                ('data_overlay', FIF.TILES, '数据叠加套合', '计算矢量数据套合占比'),
+                ('field_split', FIF.CUT, '字段分离要素', '按字段值分离矢量要素'),
+                ('area_adjust', FIF.ZOOM, '面积调整要素', '按指定面积调整要素'),
+                ('merge_features', FIF.ACCEPT, '合并要素', '合并目录所有要素'),
+                ('dissolve_features', FIF.ACCEPT, '融合要素', '融合相同类型要素'),
+                ('identify_features', FIF.MARKET, '标识卡片', '支持图层添加与顺序调整'),
+                ('fix_sharp_angle', FIF.CHECKBOX, '修复尖锐角', '修复矢量要素尖锐角'),
+                ('eliminate_features', FIF.DELETE, '消除面', '合并小面到邻近面'),
+                ('polygon_to_line', FIF.TAG, '要素面转线', '多边形转线要素'),
+                ('change_map_tool', FIF.SYNC, '变更上图工具', '变更上图完整工作流'),
+                ('organize_fields', FIF.DOCUMENT, '字段整理', '整理要素字段结构'),
+                ('spatial_join_fields', FIF.GLOBE, '空间挂接字段', '空间挂接要素字段'),
+                ('eliminate_overlap', FIF.DELETE, '要素去重叠', '移除要素重叠区域并保留边界'),
+                ('feature_intersection', FIF.LAYOUT, '要素相交', '检测要素重叠区域，输出相交结果'),
             ]),
             # 格式转换类
             ('format', '格式转换', [
-                ('dxf_convert', FIF.DOCUMENT, 'DXF转SHP', '提取DXF图层转SHP格式'),
-                ('shp_to_kmz', FIF.FOLDER, 'SHP转KMZ', '转换为奥维地图格式'),
-                ('kmz_to_shp', FIF.FOLDER, 'KMZ转SHP', '将KMZ奥维格式转换为SHP矢量文件'),
-                ('shp_to_wkt', FIF.CODE, 'SHP转WKT', '转换为WKT文本格式'),
-                ('wkt_to_shp', FIF.CODE, 'WKT转SHP', 'WKT坐标串转矢量文件'),
-                ('land_department_coords', FIF.DOCUMENT, '征地部坐标转换', '征地部标准坐标转SHP'),
+                ('dxf_convert', FIF.DOCUMENT, 'DXF转SHP', 'DXF图层转SHP'),
+                ('shp_to_kmz', FIF.FOLDER, 'SHP转KMZ', '转奥维地图格式'),
+                ('kmz_to_shp', FIF.FOLDER, 'KMZ转SHP', '奥维格式转SHP'),
+                ('shp_to_wkt', FIF.CODE, 'SHP转WKT', '转WKT文本格式'),
+                ('wkt_to_shp', FIF.CODE, 'WKT转SHP', 'WKT转矢量文件'),
+                ('land_department_coords', FIF.DOCUMENT, '征地部坐标转换', '征地部坐标转SHP'),
             ]),
             # 投影处理类
             ('projection', '投影处理', [
-                ('projection', FIF.GLOBE, '投影转换', '修改与定义数据投影'),
+                ('projection', FIF.GLOBE, '投影转换', '修改定义数据投影'),
             ]),
             # 影像处理类
             ('image', '影像处理', [
-                ('image_mosaic', FIF.PHOTO, '影像拼接', '多影像文件拼接处理'),
-                ('image_crop', FIF.CUT, '影像裁剪', '根据矢量裁剪影像'),
-                ('image_crop_by_admin_region', FIF.CUT, '影像裁剪-行政区', '按行政区域分类裁剪影像'),
+                ('image_mosaic', FIF.PHOTO, '影像拼接', '多影像拼接'),
+                ('image_crop', FIF.CUT, '影像裁剪', '矢量裁剪影像'),
+                ('image_crop_by_admin_region', FIF.CUT, '影像裁剪-行政区', '按行政区裁剪影像'),
             ]),
             # 坐标处理类
             ('coordinate', '坐标处理', [
-                ('center_point', FIF.PIN, '获取中心点', '获取矢量要素中心坐标'),
-                ('coords_to_shp', FIF.PIN, '坐标转SHP', '坐标点转矢量文件'),
+                ('center_point', FIF.PIN, '获取中心点', '获取要素中心坐标'),
+                ('coords_to_shp', FIF.PIN, '坐标转SHP', '坐标点转矢量'),
             ]),
             # 文件处理类
             ('file', '文件处理', [
-                ('file_stat', FIF.FOLDER, '文件统计', '统计文件与文件夹信息'),
-                ('move_copy', FIF.MOVE, '移动复制', '移动或复制文件/文件夹'),
-                ('data_process', FIF.ALIGNMENT, '数据处理', '单数据对应多信息处理'),
-                ('batch_rename', FIF.EDIT, '批量重命名', '批量重命名文件/文件夹'),
-                ('batch_change_extension', FIF.EDIT, '批量修改后缀', '批量修改文件后缀'),
-                ('batch_copy_move', FIF.SYNC, '批量操作', '批量复制/移动文件/文件夹'),
-                ('file_folder_content_modifier', FIF.EDIT, '文件与文件夹内容修改', '删除或插入文件与文件夹名称内容'),
+                ('file_stat', FIF.FOLDER, '文件统计', '统计文件信息'),
+                ('move_copy', FIF.MOVE, '移动复制', '移动复制文件'),
+                ('data_process', FIF.ALIGNMENT, '数据处理', '单数据多信息处理'),
+                ('batch_rename', FIF.EDIT, '批量重命名', '批量重命名文件'),
+                ('batch_change_extension', FIF.EDIT, '批量修改后缀', '批量修改后缀'),
+                ('batch_copy_move', FIF.SYNC, '批量操作', '批量复制移动'),
+                ('file_folder_content_modifier', FIF.EDIT, '文件内容修改', '修改文件名称内容'),
             ]),
             # 数据分析类
             ('analysis', '数据分析', [
-                ('file_table_compare', FIF.SEARCH, '表格比对', '比对两个Excel表格内容'),
-                ('trial_plan_summary', FIF.DOCUMENT, '试划成果总结统计', '管理边界相交面积计算表1'),
-                ('feature_check', FIF.CHECKBOX, '要素常规检查', '检查GDB或SHP要素的常规问题'),
+                ('file_table_compare', FIF.SEARCH, '表格比对', '比对Excel表格'),
+                ('trial_plan_summary', FIF.DOCUMENT, '试划成果统计', '管理边界面积计算'),
+                ('feature_check', FIF.CHECKBOX, '要素常规检查', '检查要素问题'),
             ]),
             # 文档工具类
             ('document', '文档工具', [
-                ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并、分离、转换'),
+                ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并分离转换'),
             ]),
         ]
         

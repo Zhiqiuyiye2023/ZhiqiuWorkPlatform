@@ -1068,7 +1068,8 @@ class GisWorkflowInterface(QWidget):
                 ("dissolve", "融合"),
                 ("merge", "合并"),
                 ("projection", "投影转换"),
-                ("field_filter", "字段筛选")
+                ("field_filter", "字段筛选"),
+                ("eliminate", "消除")
             ],
             "导出数据": [
                 ("export_data", "导出数据")

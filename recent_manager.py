@@ -56,6 +56,8 @@ class RecentAppsManager:
             'move_copy': '移动复制',
             'data_process': '数据处理',
             'batch_rename': '批量重命名',
+            'eliminate_features': '消除面',
+            'polygon_to_line': '要素面转线',
             'batch_change_extension': '批量修改后缀',
             'batch_copy_move': '批量操作',
             'file_table_compare': '表格比对',
@@ -64,6 +66,12 @@ class RecentAppsManager:
             'identify_features': '标识卡片',
             'trial_plan_summary': '试划成果总结统计',
             'feature_check': '要素常规检查',
+            'fix_sharp_angle': '修复尖锐角',
+            'change_map_tool': '变更上图工具',
+            'organize_fields': '字段整理',
+            'spatial_join_fields': '空间挂接字段',
+            'eliminate_overlap': '要素去重叠',
+            'feature_intersection': '要素相交',
         }
         
         # 应用图标映射
@@ -75,6 +83,8 @@ class RecentAppsManager:
             'dxf_convert': 'DOCUMENT',
             'merge_features': 'ACCEPT',
             'dissolve_features': 'ACCEPT',
+            'eliminate_features': 'ACCEPT',
+            'polygon_to_line': 'MAP',
             'shp_to_kmz': 'FOLDER',
             'kmz_to_shp': 'FOLDER',
             'shp_to_wkt': 'CODE',
@@ -97,6 +107,12 @@ class RecentAppsManager:
             'identify_features': 'MARKET',
             'trial_plan_summary': 'DOCUMENT',
             'feature_check': 'CHECK',
+            'fix_sharp_angle': 'CUT',
+            'change_map_tool': 'SYNC',
+            'organize_fields': 'LIST',
+            'spatial_join_fields': 'MAP',
+            'eliminate_overlap': 'DELETE',
+            'feature_intersection': 'LAYOUT',
         }
     
     def add_recent_app(self, app_id: str):
