@@ -63,15 +63,15 @@ class RecentAppsManager:
             'file_table_compare': '表格比对',
             'file_folder_content_modifier': '文件与文件夹内容修改',
             'dissolve_features': '融合要素',
-            'identify_features': '标识卡片',
+            'identify_features': '标识要素',
             'trial_plan_summary': '试划成果总结统计',
             'feature_check': '要素常规检查',
             'fix_sharp_angle': '修复尖锐角',
             'change_map_tool': '变更上图工具',
-            'organize_fields': '字段整理',
             'spatial_join_fields': '空间挂接字段',
             'eliminate_overlap': '要素去重叠',
             'feature_intersection': '要素相交',
+            'feature_crop': '要素裁剪',
         }
         
         # 应用图标映射
@@ -109,10 +109,10 @@ class RecentAppsManager:
             'feature_check': 'CHECK',
             'fix_sharp_angle': 'CUT',
             'change_map_tool': 'SYNC',
-            'organize_fields': 'LIST',
             'spatial_join_fields': 'MAP',
             'eliminate_overlap': 'DELETE',
             'feature_intersection': 'LAYOUT',
+            'feature_crop': 'CUT',
         }
     
     def add_recent_app(self, app_id: str):

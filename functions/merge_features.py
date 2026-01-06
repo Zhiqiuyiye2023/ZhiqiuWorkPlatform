@@ -371,15 +371,11 @@ class MergeFeaturesFunction(BaseFunction):
     
     def _initUI(self):
         """初始化界面"""
-        # 第一行：开始执行按钮
-        hBoxLayout1 = QHBoxLayout()
-        self.buttonExecute = PrimaryPushButton(self.tr('开始执行'), self, FIF.SEND)
-        self.buttonExecute.clicked.connect(self.execute)
-        hBoxLayout1.addWidget(self.buttonExecute)
-        hBoxLayout1.addStretch(1)
-        self.contentLayout.addLayout(hBoxLayout1)
+        # 确保所需控件在作用域内
+        from qfluentwidgets import ComboBox, PushButton
+        from PyQt6.QtWidgets import QListWidget, QGroupBox, QVBoxLayout
         
-        # 第二行：目录路径选择（原有功能）
+        # 第一行：目录路径选择（原有功能）
         hBoxLayout2 = QHBoxLayout()
         self.label10 = QLabel("目录路径：")
         self.lineEdit14 = LineEdit(self)
@@ -391,64 +387,77 @@ class MergeFeaturesFunction(BaseFunction):
         hBoxLayout2.addWidget(self.buttonBrowseDir)
         self.contentLayout.addLayout(hBoxLayout2)
         
-        # 第三行：GDB路径选择
-        hBoxLayout3 = QHBoxLayout()
-        self.labelGDB = QLabel("GDB文件：")
-        self.lineEditGDB = LineEdit(self)
-        self.lineEditGDB.setPlaceholderText("请输入GDB文件路径")
-        self.buttonBrowseGDB = PrimaryPushButton(self.tr('浏览'), self, FIF.FOLDER)
-        self.buttonBrowseGDB.clicked.connect(self._browseGDB)
-        hBoxLayout3.addWidget(self.labelGDB)
-        hBoxLayout3.addWidget(self.lineEditGDB)
-        hBoxLayout3.addWidget(self.buttonBrowseGDB)
-        self.contentLayout.addLayout(hBoxLayout3)
+        # 第二行：输入矢量数据选择（按照空间挂接字段面板样式）
+        input_vector_group = QGroupBox("输入矢量数据", self)
+        input_vector_layout = QVBoxLayout(input_vector_group)
         
-        # 第四行：GDB图层选择
-        hBoxLayout4 = QHBoxLayout()
-        self.labelLayers = QLabel("选择图层：")
-        self.buttonLoadLayers = PrimaryPushButton(self.tr('加载图层'), self, FIF.DOWNLOAD)
-        self.buttonLoadLayers.clicked.connect(self._loadGDBLayers)
-        hBoxLayout4.addWidget(self.labelLayers)
-        hBoxLayout4.addWidget(self.buttonLoadLayers)
-        hBoxLayout4.addStretch(1)
-        self.contentLayout.addLayout(hBoxLayout4)
+        # SHP文件选择
+        shp_layout = QHBoxLayout()
+        shp_label = QLabel("SHP文件：")
+        self.shp_path_edit = LineEdit(self)
+        self.shp_path_edit.setPlaceholderText("选择要合并的SHP文件")
+        self.shp_path_edit.setReadOnly(True)
         
-        # 第五行：图层列表勾选框
-        from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QCheckBox
-        from PyQt6.QtCore import Qt
-        self.listWidgetLayers = QListWidget(self)
-        self.listWidgetLayers.setFixedHeight(150)
-        self.listWidgetLayers.setEnabled(False)  # 初始禁用
-        self.contentLayout.addWidget(self.listWidgetLayers)
+        # 添加SHP文件选择按钮
+        self.shp_browse_btn = PushButton("选择SHP", self, FIF.FOLDER)
+        self.shp_browse_btn.clicked.connect(self._browseSHP)
+        self.shp_browse_btn.setFixedWidth(120)
         
-        # 第六行：SHP文件选择（新功能）
-        hBoxLayout6 = QHBoxLayout()
-        self.labelSHP = QLabel("SHP文件：")
-        self.buttonAddSHP = PrimaryPushButton(self.tr('添加SHP文件'), self, FIF.ADD)
-        self.buttonAddSHP.clicked.connect(self._addSHPFile)
-        hBoxLayout6.addWidget(self.labelSHP)
-        hBoxLayout6.addWidget(self.buttonAddSHP)
-        hBoxLayout6.addStretch(1)
-        self.contentLayout.addLayout(hBoxLayout6)
+        # 添加GDB文件选择按钮
+        self.gdb_browse_btn = PushButton("选择GDB", self, FIF.FOLDER)
+        self.gdb_browse_btn.clicked.connect(self._browseGDB)
+        self.gdb_browse_btn.setFixedWidth(120)
         
-        # 第七行：SHP文件合并列表
+        shp_layout.addWidget(shp_label)
+        shp_layout.addWidget(self.shp_path_edit, 1)
+        shp_layout.addWidget(self.shp_browse_btn)
+        shp_layout.addWidget(self.gdb_browse_btn)
+        input_vector_layout.addLayout(shp_layout)
+        
+        # GDB图层选择（按照空间挂接字段面板样式，仅GDB文件显示）
+        self.gdb_layer_layout = QHBoxLayout()
+        gdb_layer_label = QLabel("GDB图层：")
+        self.layerCombo = ComboBox(self)
+        self.layerCombo.setPlaceholderText("请先选择GDB文件")
+        self.layerCombo.setEnabled(False)  # 初始禁用
+        self.layerCombo.setMinimumWidth(200)
+        
+        # 添加按钮将GDB图层加载到SHP列表
+        self.addGdbLayerToShpListBtn = PushButton("添加到SHP列表")
+        self.addGdbLayerToShpListBtn.setEnabled(False)
+        self.addGdbLayerToShpListBtn.clicked.connect(self._addGdbLayerToShpList)
+        self.addGdbLayerToShpListBtn.setFixedWidth(120)
+        
+        self.gdb_layer_layout.addWidget(gdb_layer_label)
+        self.gdb_layer_layout.addWidget(self.layerCombo, 1)
+        self.gdb_layer_layout.addWidget(self.addGdbLayerToShpListBtn)
+        
+        # 添加到输入矢量布局
+        input_vector_layout.addLayout(self.gdb_layer_layout)
+        
+        self.contentLayout.addWidget(input_vector_group)
+        
+        # SHP文件合并列表
         self.labelSHPList = QLabel("已添加的SHP文件列表：")
         self.contentLayout.addWidget(self.labelSHPList)
         
-        # 第八行：SHP文件列表
+        # SHP文件列表
         self.listWidgetSHP = QListWidget(self)
         self.listWidgetSHP.setFixedHeight(150)
         self.contentLayout.addWidget(self.listWidgetSHP)
         
-        # 第九行：移除SHP文件按钮
-        hBoxLayout7 = QHBoxLayout()
-        self.buttonRemoveSHP = PrimaryPushButton(self.tr('移除选中文件'), self, FIF.DELETE)
-        self.buttonRemoveSHP.clicked.connect(self._removeSHPFile)
-        hBoxLayout7.addWidget(self.buttonRemoveSHP)
-        hBoxLayout7.addStretch(1)
-        self.contentLayout.addLayout(hBoxLayout7)
+        # SHP文件操作按钮
+        shp_ops_layout = QHBoxLayout()
         
-        # 第十行：输出设置
+        # 移除SHP文件按钮
+        self.buttonRemoveSHP = PushButton("移除选中文件", self, FIF.DELETE)
+        self.buttonRemoveSHP.clicked.connect(self._removeSHPFile)
+        
+        shp_ops_layout.addWidget(self.buttonRemoveSHP)
+        shp_ops_layout.addStretch(1)
+        self.contentLayout.addLayout(shp_ops_layout)
+        
+        # 输出设置
         hBoxLayout5 = QHBoxLayout()
         self.labelOutput = QLabel("输出设置：")
         
@@ -470,6 +479,14 @@ class MergeFeaturesFunction(BaseFunction):
         hBoxLayout5.addWidget(self.lineEditOutput)
         hBoxLayout5.addWidget(self.buttonBrowseOutput)
         self.contentLayout.addLayout(hBoxLayout5)
+        
+        # 最后一行：开始执行按钮
+        hBoxLayout1 = QHBoxLayout()
+        self.buttonExecute = PrimaryPushButton(self.tr('开始执行'), self, FIF.SEND)
+        self.buttonExecute.clicked.connect(self.execute)
+        hBoxLayout1.addWidget(self.buttonExecute)
+        hBoxLayout1.addStretch(1)
+        self.contentLayout.addLayout(hBoxLayout1)
     
     def _browseDirectory(self):
         """浏览目录"""
@@ -478,12 +495,25 @@ class MergeFeaturesFunction(BaseFunction):
         if dir_path:
             self.lineEdit14.setText(dir_path)
     
+    def _browseSHP(self):
+        """浏览SHP文件"""
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择SHP文件", ".", "Shapefiles (*.shp)"
+        )
+        if file_path:
+            self.shp_path_edit.setText(file_path)
+            # 自动添加到SHP列表
+            self._addSHPFile([file_path])
+    
     def _browseGDB(self):
-        """浏览GDB文件"""
+        """浏览GDB文件，自动加载图层"""
         from PyQt6.QtWidgets import QFileDialog
         file_path = QFileDialog.getExistingDirectory(self, "选择GDB文件")
         if file_path and file_path.endswith('.gdb'):
-            self.lineEditGDB.setText(file_path)
+            self.shp_path_edit.setText(file_path)
+            # 自动加载图层
+            self._loadGDBLayers()
     
     def _browseOutput(self):
         """浏览输出路径"""
@@ -492,18 +522,19 @@ class MergeFeaturesFunction(BaseFunction):
         if dir_path:
             self.lineEditOutput.setText(dir_path)
     
-    def _addSHPFile(self):
+    def _addSHPFile(self, file_paths=None):
         """添加SHP文件到合并列表"""
         from PyQt6.QtWidgets import QFileDialog, QListWidgetItem
         from PyQt6.QtCore import Qt
         
-        # 打开文件选择对话框，允许选择多个SHP文件
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self, 
-            "选择要合并的SHP文件", 
-            "", 
-            "SHP文件 (*.shp);;所有文件 (*.*)"
-        )
+        if file_paths is None:
+            # 打开文件选择对话框，允许选择多个SHP文件
+            file_paths, _ = QFileDialog.getOpenFileNames(
+                self, 
+                "选择要合并的SHP文件", 
+                "", 
+                "SHP文件 (*.shp);;所有文件 (*.*)"
+            )
         
         if file_paths:
             # 获取当前列表中已有的文件路径
@@ -558,16 +589,57 @@ class MergeFeaturesFunction(BaseFunction):
             else:
                 self.showInfo("请先选择或勾选要移除的SHP文件")
     
+    def _addGdbLayerToShpList(self):
+        """将选择的GDB图层添加到SHP列表中"""
+        gdb_path = self.shp_path_edit.text()
+        selected_layer = self.layerCombo.currentText()
+        
+        if not gdb_path or not selected_layer:
+            self.showError("请先选择GDB文件和图层")
+            return
+        
+        try:
+            from PyQt6.QtWidgets import QListWidgetItem
+            from PyQt6.QtCore import Qt
+            
+            # 创建一个特殊的列表项，格式为 "GDB路径|图层名称"
+            item_text = f"{gdb_path}|{selected_layer}"
+            
+            # 检查是否已经在列表中
+            existing_items = []
+            for i in range(self.listWidgetSHP.count()):
+                item = self.listWidgetSHP.item(i)
+                if item:
+                    existing_items.append(item.text())
+            
+            if item_text in existing_items:
+                self.showInfo("该GDB图层已在SHP列表中")
+                return
+            
+            # 创建列表项并添加到列表
+            item = QListWidgetItem(item_text)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            # 添加自定义数据标识这是一个GDB图层
+            item.setData(Qt.ItemDataRole.UserRole, "gdb_layer")
+            self.listWidgetSHP.addItem(item)
+            
+            self.showSuccess(f"成功将GDB图层 '{selected_layer}' 添加到SHP列表")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.showError(f"添加GDB图层到SHP列表失败: {str(e)}")
+    
     def _loadGDBLayers(self):
         """加载GDB图层"""
-        gdb_path = self.lineEditGDB.text()
+        gdb_path = self.shp_path_edit.text()
         if not gdb_path or not gdb_path.endswith('.gdb'):
             self.showError("请先选择有效的GDB文件")
             return
         
         try:
             # 清空当前图层列表
-            self.listWidgetLayers.clear()
+            self.layerCombo.clear()
             
             # 使用geopandas和fiona获取GDB文件中的所有图层
             import fiona
@@ -581,23 +653,14 @@ class MergeFeaturesFunction(BaseFunction):
                 self.showError("GDB文件中没有找到图层")
                 return
             
-            # 添加图层到勾选列表
-            from PyQt6.QtWidgets import QListWidgetItem, QCheckBox
-            from PyQt6.QtCore import Qt
-            
+            # 添加图层到下拉控件
             for layer_name in layer_names:
-                # 创建复选框
-                checkbox = QCheckBox(layer_name)
-                
-                # 创建列表项
-                item = QListWidgetItem()
-                item.setSizeHint(checkbox.sizeHint())
-                
-                # 添加到列表
-                self.listWidgetLayers.addItem(item)
-                self.listWidgetLayers.setItemWidget(item, checkbox)
+                self.layerCombo.addItem(layer_name)
             
-            self.listWidgetLayers.setEnabled(True)
+            # QFluentWidgets的ComboBox不支持setEditable方法，移除相关设置
+            
+            self.layerCombo.setEnabled(True)
+            self.addGdbLayerToShpListBtn.setEnabled(True)
             self.showSuccess(f"成功加载 {len(layer_names)} 个图层")
             
         except Exception as e:
@@ -609,7 +672,11 @@ class MergeFeaturesFunction(BaseFunction):
         """验证输入"""
         # 检查是否至少提供了目录路径、GDB文件或勾选的SHP文件
         has_dir = bool(self.lineEdit14.text())
-        has_gdb = bool(self.lineEditGDB.text())
+        has_gdb = False
+        
+        # 检查是否有GDB文件路径
+        if self.shp_path_edit.text() and self.shp_path_edit.text().endswith('.gdb'):
+            has_gdb = True
         
         # 检查是否有勾选的SHP文件
         has_checked_shp = False
@@ -622,22 +689,20 @@ class MergeFeaturesFunction(BaseFunction):
         if not has_dir and not has_gdb and not has_checked_shp:
             return False, "请至少输入目录路径、GDB文件路径或添加并勾选SHP文件"
         
-        # 如果选择了GDB文件，检查是否有勾选的图层
+        # 如果选择了GDB文件，检查是否有选择的图层
         if has_gdb:
             # 检查是否已加载图层
-            if self.listWidgetLayers.count() == 0:
+            if self.layerCombo.count() == 0:
                 return False, "请先加载GDB图层"
             
-            # 检查是否有勾选的图层
-            has_checked_gdb = False
-            for i in range(self.listWidgetLayers.count()):
-                item = self.listWidgetLayers.item(i)
-                checkbox = self.listWidgetLayers.itemWidget(item)
-                if checkbox and checkbox.isChecked():
-                    has_checked_gdb = True
-                    break
+            # 检查是否有选择的图层
+            has_selected_gdb = False
+            # ComboBox不支持多选，所以只要有图层被添加到下拉框，就认为可以选择
+            # 实际选择在execute方法中处理
+            if self.layerCombo.count() > 0:
+                has_selected_gdb = True
             
-            if not has_checked_gdb:
+            if not has_selected_gdb:
                 return False, "请至少选择一个要合并的GDB图层"
             
             # 如果输出到SHP文件，检查输出路径
@@ -676,16 +741,42 @@ class MergeFeaturesFunction(BaseFunction):
         output_path = self.lineEditOutput.text()
         if not output_path:
             # 如果没有指定输出路径，使用默认路径
-            if self.lineEdit14.text():
+            # 优先使用列表中第一个数据项的路径
+            default_path = None
+            
+            # 检查列表中是否有数据项（不管是否勾选）
+            if self.listWidgetSHP.count() > 0:
+                first_item = self.listWidgetSHP.item(0)
+                if first_item:
+                    first_item_text = first_item.text()
+                    if "|" in first_item_text:
+                        # GDB图层项，格式为 "GDB路径|图层名称"
+                        gdb_path, _ = first_item_text.split("|", 1)
+                        default_path = os.path.dirname(gdb_path)
+                    else:
+                        # 普通SHP文件
+                        default_path = os.path.dirname(first_item_text)
+            
+            # 如果列表中有数据项，使用其路径作为默认输出路径
+            if default_path:
+                output_path = default_path
+            elif self.lineEdit14.text():
+                # 否则检查目录路径
                 output_path = self.lineEdit14.text()
-            elif self.lineEditGDB.text():
-                output_path = os.path.dirname(self.lineEditGDB.text())
+            elif self.shp_path_edit.text():
+                # 否则检查GDB/SHP选择框
+                output_path = os.path.dirname(self.shp_path_edit.text())
             else:
-                # 如果都没有，使用第一个SHP文件所在目录
+                # 最后检查是否有勾选的SHP文件
                 for i in range(self.listWidgetSHP.count()):
                     item = self.listWidgetSHP.item(i)
                     if item and item.checkState() == Qt.CheckState.Checked:
-                        output_path = os.path.dirname(item.text())
+                        item_text = item.text()
+                        if "|" in item_text:
+                            gdb_path, _ = item_text.split("|", 1)
+                            output_path = os.path.dirname(gdb_path)
+                        else:
+                            output_path = os.path.dirname(item_text)
                         break
         
         # 检查是目录合并、GDB图层合并、SHP列表合并还是混合合并
@@ -693,27 +784,63 @@ class MergeFeaturesFunction(BaseFunction):
         merge_type = None
         params = None
         
-        # 检查是否有勾选的SHP文件
+        # 检查是否有勾选的SHP文件或GDB图层
         checked_shp_files = []
+        checked_gdb_layers = []
+        gdb_paths = []
+        
         for i in range(self.listWidgetSHP.count()):
             item = self.listWidgetSHP.item(i)
             if item and item.checkState() == Qt.CheckState.Checked:
-                checked_shp_files.append(item.text())
+                item_text = item.text()
+                # 检查是否是GDB图层项（格式为 "GDB路径|图层名称"）
+                if "|" in item_text:
+                    gdb_path, layer_name = item_text.split("|", 1)
+                    gdb_paths.append(gdb_path)
+                    checked_gdb_layers.append(layer_name)
+                else:
+                    # 普通SHP文件
+                    checked_shp_files.append(item_text)
         
-        # 检查是否有GDB文件和勾选的图层
-        has_gdb = bool(self.lineEditGDB.text())
-        checked_gdb_layers = []
-        if has_gdb:
-            for i in range(self.listWidgetLayers.count()):
-                item = self.listWidgetLayers.item(i)
-                checkbox = self.listWidgetLayers.itemWidget(item)
-                if checkbox and checkbox.isChecked():
-                    checked_gdb_layers.append(checkbox.text())
+        # 检查是否有GDB文件和选择的图层
+        has_gdb_from_combo = bool(self.shp_path_edit.text()) and self.shp_path_edit.text().endswith('.gdb')
+        combo_gdb_layers = []
+        if has_gdb_from_combo:
+            # 获取所有图层
+            all_layers = []
+            for i in range(self.layerCombo.count()):
+                all_layers.append(self.layerCombo.itemText(i))
+            
+            # 获取当前选择的图层
+            selected_layer = self.layerCombo.currentText()
+            
+            if selected_layer:
+                # 如果选择了特定图层，就只合并该图层
+                combo_gdb_layers = [selected_layer]
+            else:
+                # 如果没有选择特定图层，就合并所有图层
+                combo_gdb_layers = all_layers
+        
+        # 处理GDB图层合并逻辑
+        has_gdb = False
+        gdb_path = ""
+        unique_gdb_paths = list(set(gdb_paths))
+        
+        if unique_gdb_paths:
+            # 使用SHP列表中的GDB路径和图层
+            has_gdb = True
+            gdb_path = unique_gdb_paths[0]
+            checked_gdb_layers = list(set(checked_gdb_layers))  # 去重
+        elif has_gdb_from_combo:
+            # 使用组合框中的GDB路径和图层
+            has_gdb = True
+            gdb_path = self.shp_path_edit.text()
+            checked_gdb_layers.extend(combo_gdb_layers)
+            checked_gdb_layers = list(set(checked_gdb_layers))  # 去重
         
         if checked_shp_files and has_gdb and checked_gdb_layers:
             # 混合合并：同时合并SHP文件和GDB图层
             merge_type = 'mixed'
-            gdb_path = self.lineEditGDB.text()
             params = (checked_shp_files, gdb_path, checked_gdb_layers, output_path)
         elif checked_shp_files:
             # SHP列表合并
@@ -722,7 +849,6 @@ class MergeFeaturesFunction(BaseFunction):
         elif has_gdb and checked_gdb_layers:
             # GDB图层合并
             merge_type = 'gdb'
-            gdb_path = self.lineEditGDB.text()
             output_mode = self.outputModeCombo.currentText()
             params = (gdb_path, checked_gdb_layers, output_mode, output_path)
         elif self.lineEdit14.text():

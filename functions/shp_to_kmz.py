@@ -4,7 +4,7 @@ SHP转KMZ奥维格式功能
 """
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QFileDialog, QMessageBox, QGroupBox
 from PyQt6.QtGui import QColor
 from qfluentwidgets import (LineEdit, PushButton, ComboBox, CheckBox, SpinBox,
                            ColorPickerButton, StateToolTip)
@@ -16,29 +16,40 @@ import os
 
 class ConversionThread(QThread):
     """转换线程类，用于在后台执行SHP转KMZ任务"""
-    success = pyqtSignal(str)  # 成功信号
+    success = pyqtSignal(str)  # 成功信号，传递输出路径
     error = pyqtSignal(str)     # 错误信号
     
-    def __init__(self, 文件路径, 分离字段, 标注字段, 颜色值, 线宽值, 是否分离):
+    def __init__(self, 文件路径, 图层名称, 分离字段, 标注字段, 颜色值, 线宽值, 是否分离, 输出路径):
         super().__init__()
         self.文件路径 = 文件路径
+        self.图层名称 = 图层名称
         self.分离字段 = 分离字段
         self.标注字段 = 标注字段
         self.颜色值 = 颜色值
         self.线宽值 = 线宽值
         self.是否分离 = 是否分离
+        self.输出路径 = 输出路径
     
     def run(self):
         """执行转换任务"""
         try:
-            # 导入格式转换模块
             import sys
             import os
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             
+            import geopandas as gpd
+            
+            # 读取矢量数据
+            if self.文件路径.lower().endswith('.gdb') and self.图层名称:
+                gdf = gpd.read_file(self.文件路径, layer=self.图层名称)
+            else:
+                gdf = gpd.read_file(self.文件路径)
+            
+            # 导入格式转换模块
             from .格式转换 import SHP转KMZ奥维格式
             
             # 直接调用格式转换模块中的函数
+            # 注意：SHP转KMZ奥维格式函数不支持output_path和layer_name参数，会使用默认输出路径
             SHP转KMZ奥维格式(
                 矢量路径=self.文件路径,
                 分离字段=self.分离字段,
@@ -49,7 +60,7 @@ class ConversionThread(QThread):
             )
             
             # 发送成功信号
-            self.success.emit(os.path.dirname(self.文件路径))
+            self.success.emit(self.输出路径)
             
         except Exception as e:
             import traceback
@@ -71,16 +82,10 @@ class ShpToKmzFunction(BaseFunction):
     def __init__(self, parent=None):
         description = (
             "📢 <b>功能说明：</b><br>"
-            "1. <b>文件选择</b><br>"
-            "   - 选择SHP文件进行转换<br>"
-            "2. <b>样式设置</b><br>"
-            "   - 线条颜色：点击选择器设置颜色（ABGR格式）<br>"
-            "   - 线条宽度：1-10之间的整数<br>"
-            "3. <b>字段分离</b><br>"
-            "   - 勾选后可按指定字段分离要素<br>"
-            "   - 分离后每个字段值生成独立KMZ文件<br>"
-            "4. <b>标注字段</b><br>"
-            "   - 选择用于显示标注的字段<br>"
+            "- 支持SHP/GDB矢量文件转换为KMZ奥维格式<br>"
+            "- 可自定义线条颜色、宽度等样式参数<br>"
+            "- 支持按字段分离要素，生成独立KMZ文件<br>"
+            "- 可选择字段作为地物标注显示<br>"
         )
         super().__init__("SHP转KMZ奥维格式", description, parent)
         
@@ -89,30 +94,31 @@ class ShpToKmzFunction(BaseFunction):
     
     def _initUI(self):
         """初始化界面"""
-        # 文件选择行
-        fileRow = QHBoxLayout()
-        fileRow.setSpacing(10)
+        # 输入设置区域
+        input_group = QGroupBox("输入矢量数据", self)
+        input_layout = QVBoxLayout(input_group)
         
-        label_shp = QLabel("SHP文件：")
-        label_shp.setFixedWidth(60)
+        # 输入文件选择
+        input_layout.addLayout(self._createInputFileLayout())
         
-        self.addVectorBtn = PushButton("选择文件", self, FIF.DOCUMENT)
-        self.addVectorBtn.clicked.connect(self._selectFile)
-        self.addVectorBtn.setFixedWidth(100)
+        # GDB图层选择
+        self.gdb_layer_layout = QHBoxLayout()
+        gdb_layer_label = QLabel("GDB图层：")
+        self.gdb_layer_combo = ComboBox(self)
+        self.gdb_layer_combo.setPlaceholderText("请先选择GDB文件")
+        self.gdb_layer_combo.setEnabled(False)
         
-        self.filePathLabel = QLabel("")
-        self.filePathLabel.setFixedWidth(300)
+        self.gdb_layer_layout.addWidget(gdb_layer_label)
+        self.gdb_layer_layout.addWidget(self.gdb_layer_combo, 1)
+        # 默认隐藏GDB图层选择
+        for i in range(self.gdb_layer_layout.count()):
+            widget = self.gdb_layer_layout.itemAt(i).widget()
+            if widget:
+                widget.setVisible(False)
+        input_layout.addLayout(self.gdb_layer_layout)
         
-        fileRow.addWidget(label_shp)
-        fileRow.addWidget(self.addVectorBtn)
-        fileRow.addWidget(self.filePathLabel)
-        fileRow.addStretch(1)
-        
-        self.contentLayout.addLayout(fileRow)
-        
-        # 字段选择行
-        fieldRow = QHBoxLayout()
-        fieldRow.setSpacing(10)
+        # 字段设置
+        field_row = QHBoxLayout()
         
         # 分离选项
         self.checkBox分离 = CheckBox("按字段分离", self)
@@ -131,18 +137,16 @@ class ShpToKmzFunction(BaseFunction):
         self.nameCombo.setFixedWidth(150)
         self.nameCombo.setEnabled(False)
         
-        fieldRow.addWidget(self.checkBox分离)
-        fieldRow.addWidget(label_split)
-        fieldRow.addWidget(self.fieldCombo)
-        fieldRow.addWidget(label_name)
-        fieldRow.addWidget(self.nameCombo)
-        fieldRow.addStretch(1)
+        field_row.addWidget(self.checkBox分离)
+        field_row.addWidget(label_split)
+        field_row.addWidget(self.fieldCombo)
+        field_row.addWidget(label_name)
+        field_row.addWidget(self.nameCombo)
+        field_row.addStretch(1)
+        input_layout.addLayout(field_row)
         
-        self.contentLayout.addLayout(fieldRow)
-        
-        # 样式设置行
-        styleRow = QHBoxLayout()
-        styleRow.setSpacing(10)
+        # 样式设置
+        style_row = QHBoxLayout()
         
         label_color = QLabel("线条颜色：")
         self.colorPicker = CustomColorPickerButton(self)
@@ -158,40 +162,169 @@ class ShpToKmzFunction(BaseFunction):
         self.spinBox线宽.setToolTip('设置线条宽度，范围1-10像素')
         self.spinBox线宽.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        styleRow.addWidget(label_color)
-        styleRow.addWidget(self.colorPicker)
-        styleRow.addWidget(label_width)
-        styleRow.addWidget(self.spinBox线宽)
-        styleRow.addStretch(1)
+        style_row.addWidget(label_color)
+        style_row.addWidget(self.colorPicker)
+        style_row.addWidget(label_width)
+        style_row.addWidget(self.spinBox线宽)
+        style_row.addStretch(1)
+        input_layout.addLayout(style_row)
         
-        self.contentLayout.addLayout(styleRow)
+        # 输出设置区域
+        output_group = QGroupBox("输出设置", self)
+        output_layout = QVBoxLayout(output_group)
+        
+        # KMZ输出路径
+        kmz_output_layout = QHBoxLayout()
+        kmz_output_label = QLabel("KMZ输出路径：")
+        self.output_path_edit = LineEdit(self)
+        self.output_path_edit.setPlaceholderText("选择输出KMZ文件路径")
+        self.output_path_edit.setReadOnly(True)
+        
+        self.output_kmz_btn = PushButton("选择输出路径", self, FIF.SAVE)
+        self.output_kmz_btn.clicked.connect(self._selectOutputFile)
+        
+        kmz_output_layout.addWidget(kmz_output_label)
+        kmz_output_layout.addWidget(self.output_path_edit, 1)
+        kmz_output_layout.addWidget(self.output_kmz_btn)
+        output_layout.addLayout(kmz_output_layout)
+        
+        # 将分组框添加到主布局
+        self.contentLayout.addWidget(input_group)
+        self.contentLayout.addWidget(output_group)
     
-    def _selectFile(self):
-        """选择SHP文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择矢量文件", "", "矢量文件 (*.shp)"
+    def _createInputFileLayout(self):
+        """创建输入文件选择布局"""
+        layout = QHBoxLayout()
+        label = QLabel("输入文件：")
+        self.filePathLabel = LineEdit(self)
+        self.filePathLabel.setPlaceholderText("选择要转换的矢量文件")
+        self.filePathLabel.setReadOnly(True)
+        
+        # 分别添加SHP和GDB文件选择按钮
+        self.shp_btn = PushButton("选择SHP", self, FIF.FOLDER)
+        self.shp_btn.clicked.connect(lambda: self._selectFeatureFile(shp_only=True))
+        self.shp_btn.setFixedWidth(120)
+        
+        self.gdb_btn = PushButton("选择GDB", self, FIF.FOLDER)
+        self.gdb_btn.clicked.connect(lambda: self._selectFeatureFile(gdb_only=True))
+        self.gdb_btn.setFixedWidth(120)
+        
+        layout.addWidget(label)
+        layout.addWidget(self.filePathLabel, 1)
+        layout.addWidget(self.shp_btn)
+        layout.addWidget(self.gdb_btn)
+        return layout
+    
+    def _selectFeatureFile(self, shp_only=False, gdb_only=False):
+        """选择矢量文件"""
+        file_path = ""
+        
+        if shp_only:
+            # 选择SHP文件
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "选择SHP文件", ".", "Shapefiles (*.shp)"
+            )
+        elif gdb_only:
+            # 选择GDB文件（GDB是目录，所以使用getExistingDirectory）
+            file_path = QFileDialog.getExistingDirectory(
+                self, "选择GDB文件", "."
+            )
+        
+        if file_path:
+            # 验证GDB文件
+            if gdb_only and not file_path.endswith('.gdb'):
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="警告",
+                    content="请选择GDB文件",
+                    parent=self,
+                    position=InfoBarPosition.TOP_RIGHT
+                )
+                return
+            
+            self.filePathLabel.setText(file_path)
+            # 设置默认输出路径
+            base_path, ext = os.path.splitext(file_path)
+            default_path = f"{base_path}.kmz"
+            self.output_path_edit.setText(default_path)
+            
+            if file_path.lower().endswith('.gdb'):
+                # 显示图层选择控件
+                for i in range(self.gdb_layer_layout.count()):
+                    widget = self.gdb_layer_layout.itemAt(i).widget()
+                    if widget:
+                        widget.setVisible(True)
+                # 列出GDB中的所有图层
+                self._update_gdb_layers(file_path)
+            else:
+                # 隐藏图层选择控件
+                for i in range(self.gdb_layer_layout.count()):
+                    widget = self.gdb_layer_layout.itemAt(i).widget()
+                    if widget:
+                        widget.setVisible(False)
+                # 读取SHP字段列表
+                self._load_fields(file_path)
+    
+    def _update_gdb_layers(self, gdb_path):
+        """更新GDB图层列表"""
+        try:
+            import fiona
+            with fiona.Env():
+                layers = fiona.listlayers(gdb_path)
+            self.gdb_layer_combo.clear()
+            self.gdb_layer_combo.addItems(layers)
+            self.gdb_layer_combo.setEnabled(True)
+            self.gdb_layer_combo.currentTextChanged.connect(self._on_gdb_layer_changed)
+        except Exception as e:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.error(
+                title="错误",
+                content=f"无法读取GDB文件: {str(e)}",
+                parent=self,
+                position=InfoBarPosition.TOP_RIGHT
+            )
+    
+    def _on_gdb_layer_changed(self, layer_name):
+        """GDB图层变化事件"""
+        if layer_name and self.filePathLabel.text().lower().endswith('.gdb'):
+            gdb_path = self.filePathLabel.text()
+            self._load_fields(gdb_path, layer_name)
+    
+    def _load_fields(self, file_path, layer_name=None):
+        """加载矢量文件字段"""
+        try:
+            # 读取字段列表
+            if file_path.lower().endswith('.gdb') and layer_name:
+                gdf = gpd.read_file(file_path, layer=layer_name)
+            else:
+                gdf = gpd.read_file(file_path)
+            
+            fields = gdf.columns.tolist()
+            if 'geometry' in fields:
+                fields.remove('geometry')
+            
+            # 更新下拉框
+            self.fieldCombo.clear()
+            self.fieldCombo.addItems(fields)
+            self.fieldCombo.setCurrentIndex(-1)
+            
+            self.nameCombo.clear()
+            self.nameCombo.addItems(fields)
+            self.nameCombo.setCurrentIndex(-1)
+            self.nameCombo.setEnabled(True)
+            
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'读取矢量文件字段失败: {str(e)}')
+    
+    def _selectOutputFile(self):
+        """选择KMZ输出文件"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "保存KMZ文件", "", "KMZ文件 (*.kmz)"
         )
         if file_path:
-            self.filePathLabel.setText(file_path)
-            try:
-                # 读取字段列表
-                gdf = gpd.read_file(file_path)
-                fields = gdf.columns.tolist()
-                if 'geometry' in fields:
-                    fields.remove('geometry')
-                
-                # 更新下拉框
-                self.fieldCombo.clear()
-                self.fieldCombo.addItems(fields)
-                self.fieldCombo.setCurrentIndex(-1)
-                
-                self.nameCombo.clear()
-                self.nameCombo.addItems(fields)
-                self.nameCombo.setCurrentIndex(-1)
-                self.nameCombo.setEnabled(True)
-                
-            except Exception as e:
-                QMessageBox.critical(self, '错误', f'读取矢量文件字段失败: {str(e)}')
+            if not file_path.endswith('.kmz'):
+                file_path += '.kmz'
+            self.output_path_edit.setText(file_path)
     
     def _onCheckBoxChanged(self, state):
         """复选框状态改变事件"""
@@ -200,10 +333,18 @@ class ShpToKmzFunction(BaseFunction):
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
         if not self.filePathLabel.text():
-            return False, "请选择SHP文件"
+            return False, "请选择矢量文件"
         
         if not os.path.exists(self.filePathLabel.text()):
             return False, "文件不存在"
+        
+        if not self.output_path_edit.text():
+            return False, "请选择输出路径"
+        
+        # 验证GDB输入的图层选择
+        if self.filePathLabel.text().lower().endswith('.gdb'):
+            if not self.gdb_layer_combo.currentText():
+                return False, "请选择GDB图层"
         
         if self.checkBox分离.isChecked() and not self.fieldCombo.currentText():
             return False, "已选择按字段分离，但未选择分离字段"
@@ -223,6 +364,8 @@ class ShpToKmzFunction(BaseFunction):
         
         # 获取参数
         文件路径 = self.filePathLabel.text()
+        # 获取GDB图层名称（如果是GDB文件）
+        图层名称 = self.gdb_layer_combo.currentText() if 文件路径.lower().endswith('.gdb') else ""
         分离字段 = self.fieldCombo.currentText() if self.checkBox分离.isChecked() else ""
         标注字段 = self.nameCombo.currentText()
         是否分离 = self.checkBox分离.isChecked()
@@ -241,14 +384,19 @@ class ShpToKmzFunction(BaseFunction):
         self.stateTooltip.move(self.width()//2 - 100, 30)
         self.stateTooltip.show()
         
+        # 获取输出路径
+        输出路径 = self.output_path_edit.text()
+        
         # 创建转换线程
         self.conversion_thread = ConversionThread(
             文件路径=文件路径,
+            图层名称=图层名称,
             分离字段=分离字段,
             标注字段=标注字段,
             颜色值=颜色值,
             线宽值=线宽值,
-            是否分离=是否分离
+            是否分离=是否分离,
+            输出路径=输出路径
         )
         
         # 连接信号槽
@@ -258,9 +406,9 @@ class ShpToKmzFunction(BaseFunction):
         # 启动线程
         self.conversion_thread.start()
     
-    def _on_conversion_success(self, output_dir):
+    def _on_conversion_success(self, output_path):
         """转换成功处理"""
-        self.showSuccess(f'转换成功！\n输出目录：{output_dir}')
+        self.showSuccess(f'SHP转KMZ成功！\n输出文件：{output_path}')
         if hasattr(self, 'stateTooltip') and self.stateTooltip:
             try:
                 self.stateTooltip.close()

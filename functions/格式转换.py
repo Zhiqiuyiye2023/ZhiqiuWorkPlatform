@@ -104,8 +104,10 @@ def SHP转KMZ奥维格式(矢量路径, 分离字段, 标注字段, 颜色值, �
                             if 标注字段 and 标注字段 in gdf.columns:
                                 feature.name = str(row[标注字段])
                 
-                # 生成输出文件名（使用分类字段值）
-                output_filename = f"{os.path.splitext(os.path.basename(矢量路径))[0]}_{value}.kmz"
+                # 生成输出文件名（使用分类字段值，确保字段值不包含路径分隔符）
+                # 替换字段值中的路径分隔符
+                safe_value = str(value).replace('/', '_').replace('\\', '_')
+                output_filename = f"{os.path.splitext(os.path.basename(矢量路径))[0]}_{safe_value}.kmz"
                 output_path = os.path.join(os.path.dirname(矢量路径), output_filename)
                 
                 # 保存为KMZ文件

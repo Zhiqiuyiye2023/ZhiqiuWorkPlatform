@@ -1,9 +1,9 @@
 # coding:utf-8
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGraphicsDropShadowEffect
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from qfluentwidgets import (ScrollArea, FlowLayout, CardWidget, IconWidget, 
-                            BodyLabel, CaptionLabel, PrimaryPushButton, isDarkTheme, Theme)
+                            BodyLabel, CaptionLabel, PrimaryPushButton, isDarkTheme, Theme, themeColor)
 from qfluentwidgets import FluentIcon as FIF
 from configs.config import cfg
 
@@ -15,42 +15,69 @@ class AppCard(CardWidget):
     def __init__(self, app_id: str, icon, title: str, description: str, parent=None):
         super().__init__(parent)
         self.app_id = app_id
-        self.setFixedSize(200, 90)  # 减小卡片尺寸，使其更紧凑
+        self.setFixedSize(200, 100)  # 调整卡片高度，增加内容空间
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # 创建布局
+        # 创建主布局
         self.vBoxLayout = QVBoxLayout(self)
-        self.vBoxLayout.setContentsMargins(12, 12, 12, 12)  # 调整边距，减小内边距
-        self.vBoxLayout.setSpacing(0)  # 重置整体间距，通过spacer精确控制
+        self.vBoxLayout.setContentsMargins(16, 16, 16, 16)  # 调整边距，增加内边距
+        self.vBoxLayout.setSpacing(0)
+        
+        # 创建图标+标题的水平布局
+        self.iconTitleLayout = QHBoxLayout()
+        self.iconTitleLayout.setSpacing(10)  # 图标与标题之间的间距
+        self.iconTitleLayout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        
+        # 创建图标容器（带有背景色，增强视觉效果）
+        self.iconContainer = QFrame(self)
+        self.iconContainer.setFixedSize(28, 28)  # 缩小图标容器
+        self.iconContainer.setStyleSheet("""
+            QFrame {
+                border-radius: 6px;
+                background-color: rgba(0, 0, 0, 0.05);
+            }
+        """)
+        
+        # 为图标容器添加布局管理器
+        iconContainerLayout = QVBoxLayout(self.iconContainer)
+        iconContainerLayout.setContentsMargins(0, 0, 0, 0)
+        iconContainerLayout.setSpacing(0)
         
         # 图标
-        self.iconWidget = IconWidget(icon, self)
-        self.iconWidget.setFixedSize(24, 24)  # 减小图标大小，更适合紧凑布局
+        self.iconWidget = IconWidget(icon, self.iconContainer)
+        self.iconWidget.setFixedSize(16, 16)  # 缩小图标
+        
+        # 将图标添加到容器布局中，居中显示
+        iconContainerLayout.addWidget(self.iconWidget, 0, Qt.AlignmentFlag.AlignCenter)
         
         # 标题
         self.titleLabel = BodyLabel(title, self)
-        self.titleLabel.setFont(QFont('Microsoft YaHei', 10, QFont.Weight.DemiBold))  # 保持字体大小
-        self.titleLabel.setWordWrap(True)  # 标题允许换行
-        self.titleLabel.setMaximumHeight(22)  # 调整标题高度
+        self.titleLabel.setFont(QFont('Microsoft YaHei', 13, QFont.Weight.DemiBold))  # 增大字体，增强视觉效果
+        self.titleLabel.setWordWrap(True)
+        self.titleLabel.setMaximumHeight(36)  # 调整标题高度，允许两行显示
+        self.titleLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)  # 左对齐垂直居中
         
         # 描述
         self.descLabel = CaptionLabel(description, self)
-        self.descLabel.setWordWrap(True)  # 描述允许换行
-        self.descLabel.setFixedHeight(30)  # 减小描述区域高度
-        self.descLabel.setStyleSheet("QLabel { font-size: 8px; line-height: 12px; }")  # 调整描述字体大小和行高
+        self.descLabel.setWordWrap(True)
+        self.descLabel.setFixedHeight(30)  # 调整描述区域高度
+        self.descLabel.setStyleSheet("QLabel { font-size: 9px; line-height: 14px; }")  # 调整描述字体大小和行高
+        self.descLabel.setAlignment(Qt.AlignmentFlag.AlignLeft)  # 左对齐
         
-        # 添加到布局
-        self.vBoxLayout.addWidget(self.iconWidget, 0, Qt.AlignmentFlag.AlignLeft)
-        # 图标与标题之间的间距
-        self.vBoxLayout.addSpacing(8)
-        self.vBoxLayout.addWidget(self.titleLabel)
-        # 标题与描述之间的间距
-        self.vBoxLayout.addSpacing(6)
+        # 将图标和标题添加到水平布局
+        self.iconTitleLayout.addWidget(self.iconContainer)
+        self.iconTitleLayout.addWidget(self.titleLabel, 1)  # 标题占剩余空间
+        
+        # 添加到主布局
+        self.vBoxLayout.addLayout(self.iconTitleLayout)
+        # 标题与描述之间的间距（增大间距，拉开描述与图标的距离）
+        self.vBoxLayout.addSpacing(12)
         self.vBoxLayout.addWidget(self.descLabel)
         self.vBoxLayout.addStretch(1)
         
-        # 移除阴影效果，使用简约样式
-        self.shadow_effect = None
+        # 创建阴影效果
+        self.shadow_effect = QGraphicsDropShadowEffect(self)
+        self.setGraphicsEffect(self.shadow_effect)
         
         # 连接主题变化信号，实现自动跟随系统主题
         cfg.themeChanged.connect(self._onThemeChanged)
@@ -60,39 +87,75 @@ class AppCard(CardWidget):
     
     def _onThemeChanged(self):
         """主题变化时更新卡片样式"""
+        # 获取主题色
+        current_theme_color = themeColor()
+        theme_color_str = current_theme_color.name()
+        
         if isDarkTheme():
-            # 深色主题样式 - 简约设计，无阴影
-            self.setStyleSheet("""
-                AppCard {
+            # 深色主题样式 - 增强视觉效果
+            self.setStyleSheet(f"""
+                AppCard {{
                     background-color: #2d2d2d;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     border: 1px solid #3d3d3d;
                     color: #ffffff;
-                    transition: background-color 0.3s ease;
-                }
-                AppCard:hover {
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    transform: translateY(0);
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                }}
+                AppCard:hover {{
                     background-color: #3a3a3a;
-                    border: 1px solid #4d4d4d;
-                }
+                    border: 1px solid {theme_color_str};
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.1);
+                }}
+            """)
+            # 设置阴影效果
+            self.shadow_effect.setColor(QColor(0, 0, 0, 120))
+            self.shadow_effect.setBlurRadius(10)
+            self.shadow_effect.setOffset(0, 2)
+            # 图标容器背景色（深色主题）
+            self.iconContainer.setStyleSheet(f"""
+                QFrame {{
+                    border-radius: 6px;
+                    background: linear-gradient(135deg, {theme_color_str}20, rgba(255, 255, 255, 0.08));
+                    border: 1px solid {theme_color_str}30;
+                }}
             """)
             # 标题使用更亮的白色，提高可读性
-            self.titleLabel.setStyleSheet("color: #ffffff;")
+            self.titleLabel.setStyleSheet(f"color: #ffffff;")
             # 描述使用柔和的浅灰色，确保与背景有足够的对比度
             self.descLabel.setStyleSheet("color: #cccccc;")
         else:
-            # 浅色主题样式 - 简约设计，无阴影
-            self.setStyleSheet("""
-                AppCard {
+            # 浅色主题样式 - 增强视觉效果
+            self.setStyleSheet(f"""
+                AppCard {{
                     background-color: #ffffff;
-                    border-radius: 10px;
+                    border-radius: 6px;
                     border: 1px solid #e0e0e0;
                     color: #333333;
-                    transition: background-color 0.3s ease;
-                }
-                AppCard:hover {
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    transform: translateY(0);
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+                }}
+                AppCard:hover {{
                     background-color: #f8f8f8;
-                    border: 1px solid #d0d0d0;
-                }
+                    border: 1px solid {theme_color_str};
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 0 0 1px {theme_color_str}20;
+                }}
+            """)
+            # 设置阴影效果
+            self.shadow_effect.setColor(QColor(0, 0, 0, 60))
+            self.shadow_effect.setBlurRadius(12)
+            self.shadow_effect.setOffset(0, 3)
+            # 图标容器背景色（浅色主题）
+            self.iconContainer.setStyleSheet(f"""
+                QFrame {{
+                    border-radius: 6px;
+                    background: linear-gradient(135deg, {theme_color_str}15, rgba(0, 0, 0, 0.05));
+                    border: 1px solid {theme_color_str}20;
+                }}
             """)
             # 标题使用深灰色而非纯黑色，视觉更舒适
             self.titleLabel.setStyleSheet("color: #333333;")
@@ -163,15 +226,15 @@ class AppCardInterface(ScrollArea):
                 ('area_adjust', FIF.ZOOM, '面积调整要素', '按指定面积调整要素'),
                 ('merge_features', FIF.ACCEPT, '合并要素', '合并目录所有要素'),
                 ('dissolve_features', FIF.ACCEPT, '融合要素', '融合相同类型要素'),
-                ('identify_features', FIF.MARKET, '标识卡片', '支持图层添加与顺序调整'),
+                ('identify_features', FIF.MARKET, '标识要素', '支持图层添加与顺序调整'),
                 ('fix_sharp_angle', FIF.CHECKBOX, '修复尖锐角', '修复矢量要素尖锐角'),
                 ('eliminate_features', FIF.DELETE, '消除面', '合并小面到邻近面'),
                 ('polygon_to_line', FIF.TAG, '要素面转线', '多边形转线要素'),
                 ('change_map_tool', FIF.SYNC, '变更上图工具', '变更上图完整工作流'),
-                ('organize_fields', FIF.DOCUMENT, '字段整理', '整理要素字段结构'),
                 ('spatial_join_fields', FIF.GLOBE, '空间挂接字段', '空间挂接要素字段'),
                 ('eliminate_overlap', FIF.DELETE, '要素去重叠', '移除要素重叠区域并保留边界'),
                 ('feature_intersection', FIF.LAYOUT, '要素相交', '检测要素重叠区域，输出相交结果'),
+                ('feature_crop', FIF.CUT, '要素裁剪', '使用裁剪范围裁剪要素，支持输出到文件或GDB'),
             ]),
             # 格式转换类
             ('format', '格式转换', [

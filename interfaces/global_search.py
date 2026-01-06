@@ -108,12 +108,11 @@ class GlobalSearchDropdown(QWidget):
             ('area_adjust', FIF.ZOOM, '面积调整要素', '按指定面积调整要素'),
             ('merge_features', FIF.ACCEPT, '合并要素', '合并目录所有要素'),
             ('dissolve_features', FIF.ACCEPT, '融合要素', '融合相同类型要素'),
-            ('identify_features', FIF.MARKET, '标识卡片', '支持图层添加与顺序调整'),
+            ('identify_features', FIF.MARKET, '标识要素', '支持图层添加与顺序调整'),
             ('fix_sharp_angle', FIF.CHECKBOX, '修复尖锐角', '修复矢量要素尖锐角'),
             ('eliminate_features', FIF.DELETE, '消除面', '合并小面到邻近面'),
             ('polygon_to_line', FIF.TAG, '要素面转线', '多边形转线要素'),
             ('change_map_tool', FIF.SYNC, '变更上图工具', '变更上图完整工作流'),
-            ('organize_fields', FIF.DOCUMENT, '字段整理', '整理要素字段结构'),
             ('spatial_join_fields', FIF.GLOBE, '空间挂接字段', '空间挂接要素字段'),
             
             # 格式转换类

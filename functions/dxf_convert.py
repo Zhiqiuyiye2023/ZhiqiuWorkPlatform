@@ -3,9 +3,9 @@
 DXF转SHP功能
 """
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel
-from PyQt6.QtCore import QThread, pyqtSignal
-from qfluentwidgets import LineEdit, PrimaryPushButton, StateToolTip
+from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QFileDialog, QGroupBox, QMessageBox
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from qfluentwidgets import LineEdit, PrimaryPushButton, PushButton, ComboBox, StateToolTip
 from qfluentwidgets import FluentIcon as FIF
 from .base_function import BaseFunction
 
@@ -16,15 +16,23 @@ class DxfConvertThread(QThread):
     success = pyqtSignal(str)  # 成功信号，传递结果信息
     error = pyqtSignal(str)    # 错误信号，传递错误信息
     
-    def __init__(self, dxf_path, layer_name, parent=None):
+    def __init__(self, dxf_path, layer_name, output_path, output_gdb, output_layer, output_type, parent=None):
         """
         Args:
             dxf_path: DXF文件路径
             layer_name: 要提取的图层名称
+            output_path: SHP输出路径
+            output_gdb: GDB输出路径
+            output_layer: GDB输出图层名称
+            output_type: 输出类型（SHP文件或GDB图层）
         """
         super().__init__(parent)
         self.dxf_path = dxf_path
         self.layer_name = layer_name
+        self.output_path = output_path
+        self.output_gdb = output_gdb
+        self.output_layer = output_layer
+        self.output_type = output_type
     
     def run(self):
         """线程运行方法"""
@@ -37,8 +45,29 @@ class DxfConvertThread(QThread):
                 sys.path.insert(0, root_dir)
             
             from .格式转换 import DXF转SHP
-            DXF转SHP(self.dxf_path, self.layer_name)
-            self.success.emit("转换完成！")
+            
+            if self.output_type == "SHP文件":
+                DXF转SHP(self.dxf_path, self.layer_name, self.output_path)
+                self.success.emit(f"DXF转SHP成功！结果已保存到: {self.output_path}")
+            else:
+                # GDB图层输出暂不支持，需要更新底层函数
+                # 先转换为SHP，再转换为GDB
+                base_path, ext = os.path.splitext(self.dxf_path)
+                temp_shp = f"{base_path}_temp.shp"
+                DXF转SHP(self.dxf_path, self.layer_name, temp_shp)
+                
+                # 转换SHP到GDB
+                import geopandas as gpd
+                gdf = gpd.read_file(temp_shp)
+                gdf.to_file(self.output_gdb, layer=self.output_layer, driver='OpenFileGDB')
+                
+                # 删除临时文件
+                for ext in ['.shp', '.dbf', '.shx', '.prj', '.cpg', '.qpj']:
+                    temp_file = f"{base_path}_temp{ext}"
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                
+                self.success.emit(f"DXF转GDB成功！结果已保存到: {self.output_gdb} 图层: {self.output_layer}")
         except Exception as e:
             import traceback
             self.error.emit(f"转换失败: {str(e)}\n\n{traceback.format_exc()}")
@@ -61,39 +90,179 @@ class DxfConvertFunction(BaseFunction):
     
     def _initUI(self):
         """初始化界面"""
-        # 单行布局：按钮 + DXF目录标签 + DXF目录输入框 + 提取图层标签 + 提取图层输入框
-        hBoxLayout = QHBoxLayout()
+        # 输入设置区域
+        input_group = QGroupBox("输入设置", self)
+        input_layout = QVBoxLayout(input_group)
         
-        # 开始执行按钮
-        self.buttonExecute = PrimaryPushButton(self.tr('开始执行'), self, FIF.SEND)
+        # DXF文件选择
+        dxf_layout = QHBoxLayout()
+        dxf_label = QLabel("DXF文件：")
+        self.dxf_path_edit = LineEdit(self)
+        self.dxf_path_edit.setPlaceholderText("选择DXF文件")
+        self.dxf_path_edit.setReadOnly(True)
+        
+        self.dxf_browse_btn = PushButton("选择DXF", self, FIF.DOCUMENT)
+        self.dxf_browse_btn.clicked.connect(self._selectDxfFile)
+        
+        dxf_layout.addWidget(dxf_label)
+        dxf_layout.addWidget(self.dxf_path_edit, 1)
+        dxf_layout.addWidget(self.dxf_browse_btn)
+        input_layout.addLayout(dxf_layout)
+        
+        # 图层设置
+        layer_layout = QHBoxLayout()
+        layer_label = QLabel("提取图层：")
+        self.layer_edit = LineEdit(self)
+        self.layer_edit.setText("JZD")  # 默认值
+        self.layer_edit.setPlaceholderText("请输入要提取的图层名称")
+        
+        layer_layout.addWidget(layer_label)
+        layer_layout.addWidget(self.layer_edit, 1)
+        input_layout.addLayout(layer_layout)
+        
+        # 输出设置区域
+        output_group = QGroupBox("输出设置", self)
+        output_layout = QVBoxLayout(output_group)
+        
+        # 输出类型选择
+        output_type_layout = QHBoxLayout()
+        output_type_label = QLabel("输出类型：")
+        self.output_type_combo = ComboBox(self)
+        self.output_type_combo.addItems(["SHP文件", "GDB图层"])
+        self.output_type_combo.currentTextChanged.connect(self._on_output_type_changed)
+        
+        output_type_layout.addWidget(output_type_label)
+        output_type_layout.addWidget(self.output_type_combo, 1)
+        output_layout.addLayout(output_type_layout)
+        
+        # SHP输出路径
+        self.shp_output_layout = QHBoxLayout()
+        shp_output_label = QLabel("SHP输出路径：")
+        self.output_path_edit = LineEdit(self)
+        self.output_path_edit.setPlaceholderText("选择输出SHP文件路径")
+        self.output_path_edit.setReadOnly(True)
+        
+        self.output_shp_btn = PushButton("选择输出路径", self, FIF.SAVE)
+        self.output_shp_btn.clicked.connect(self._selectOutputFile)
+        
+        self.shp_output_layout.addWidget(shp_output_label)
+        self.shp_output_layout.addWidget(self.output_path_edit, 1)
+        self.shp_output_layout.addWidget(self.output_shp_btn)
+        output_layout.addLayout(self.shp_output_layout)
+        
+        # GDB输出设置
+        self.gdb_output_layout = QHBoxLayout()
+        gdb_output_label = QLabel("GDB输出路径：")
+        self.output_gdb_path = LineEdit(self)
+        self.output_gdb_path.setPlaceholderText("选择输出GDB文件路径")
+        self.output_gdb_path.setReadOnly(True)
+        
+        self.output_gdb_btn = PushButton("选择GDB", self, FIF.FOLDER)
+        self.output_gdb_btn.clicked.connect(self._select_output_gdb)
+        
+        self.gdb_output_layout.addWidget(gdb_output_label)
+        self.gdb_output_layout.addWidget(self.output_gdb_path, 1)
+        self.gdb_output_layout.addWidget(self.output_gdb_btn)
+        output_layout.addLayout(self.gdb_output_layout)
+        
+        # GDB图层名称设置
+        self.gdb_layer_layout = QHBoxLayout()
+        gdb_layer_label = QLabel("GDB图层名称：")
+        self.output_gdb_layer = LineEdit(self)
+        self.output_gdb_layer.setPlaceholderText("输入输出图层名称")
+        
+        self.gdb_layer_layout.addWidget(gdb_layer_label)
+        self.gdb_layer_layout.addWidget(self.output_gdb_layer, 1)
+        output_layout.addLayout(self.gdb_layer_layout)
+        
+        # 初始显示SHP输出选项
+        self._on_output_type_changed("SHP文件")
+        
+        # 将分组框添加到主布局
+        self.contentLayout.addWidget(input_group)
+        self.contentLayout.addWidget(output_group)
+        
+        # 添加执行按钮
+        self.buttonExecute = PrimaryPushButton("开始转换", self, FIF.PLAY)
         self.buttonExecute.clicked.connect(self.execute)
-        
-        # DXF目录
-        self.label8 = QLabel("DXF目录：")
-        self.lineEdit12 = LineEdit(self)
-        self.lineEdit12.setPlaceholderText("请输入DXF文件所在目录路径")
-        
-        # 提取图层
-        self.label9 = QLabel("提取图层：")
-        self.lineEdit13 = LineEdit(self)
-        self.lineEdit13.setText("JZD")  # 默认值
-        self.lineEdit13.setPlaceholderText("请输入要提取的图层名称")
-        
-        # 添加到布局
-        hBoxLayout.addWidget(self.buttonExecute)
-        hBoxLayout.addWidget(self.label8)
-        hBoxLayout.addWidget(self.lineEdit12)
-        hBoxLayout.addWidget(self.label9)
-        hBoxLayout.addWidget(self.lineEdit13)
-        
-        self.contentLayout.addLayout(hBoxLayout)
+        self.contentLayout.addWidget(self.buttonExecute, 0, Qt.AlignmentFlag.AlignCenter)
+    
+    def _selectDxfFile(self):
+        """选择DXF文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择DXF文件", "", "DXF文件 (*.dxf)"
+        )
+        if file_path:
+            self.dxf_path_edit.setText(file_path)
+            # 设置默认输出路径
+            base_path, ext = os.path.splitext(file_path)
+            default_path = f"{base_path}.shp"
+            self.output_path_edit.setText(default_path)
+            self.output_gdb_layer.setText(os.path.basename(base_path))
+    
+    def _selectOutputFile(self):
+        """选择SHP输出文件"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "保存SHP文件", "", "SHP文件 (*.shp)"
+        )
+        if file_path:
+            if not file_path.endswith('.shp'):
+                file_path += '.shp'
+            self.output_path_edit.setText(file_path)
+    
+    def _select_output_gdb(self):
+        """选择GDB输出文件"""
+        file_path = QFileDialog.getExistingDirectory(
+            self, "选择输出GDB文件", ""
+        )
+        if file_path and file_path.endswith('.gdb'):
+            self.output_gdb_path.setText(file_path)
+    
+    def _on_output_type_changed(self, output_type: str):
+        """输出类型变化处理"""
+        if output_type == "SHP文件":
+            for i in range(self.shp_output_layout.count()):
+                widget = self.shp_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
+            for i in range(self.gdb_output_layout.count()):
+                widget = self.gdb_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+            for i in range(self.gdb_layer_layout.count()):
+                widget = self.gdb_layer_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+        else:
+            for i in range(self.shp_output_layout.count()):
+                widget = self.shp_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+            for i in range(self.gdb_output_layout.count()):
+                widget = self.gdb_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
+            for i in range(self.gdb_layer_layout.count()):
+                widget = self.gdb_layer_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
     
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
-        if not self.lineEdit12.text():
-            return False, "请输入DXF目录路径"
-        if not self.lineEdit13.text():
+        if not self.dxf_path_edit.text():
+            return False, "请选择DXF文件"
+        if not self.layer_edit.text():
             return False, "请输入要提取的图层名称"
+        
+        output_type = self.output_type_combo.currentText()
+        if output_type == "SHP文件":
+            if not self.output_path_edit.text():
+                return False, "请选择SHP输出路径"
+        else:  # GDB图层
+            if not self.output_gdb_path.text():
+                return False, "请选择GDB输出路径"
+            if not self.output_gdb_layer.text():
+                return False, "请输入GDB图层名称"
         return True, ""
     
     def execute(self):
@@ -111,10 +280,28 @@ class DxfConvertFunction(BaseFunction):
         self.stateTooltip.move(510, 30)
         self.stateTooltip.show()
         
+        # 获取参数
+        dxf_path = self.dxf_path_edit.text()
+        layer_name = self.layer_edit.text()
+        output_type = self.output_type_combo.currentText()
+        
+        if output_type == "SHP文件":
+            output_path = self.output_path_edit.text()
+            output_gdb = None
+            output_layer = None
+        else:
+            output_path = None
+            output_gdb = self.output_gdb_path.text()
+            output_layer = self.output_gdb_layer.text()
+        
         # 创建并启动DXF转换线程
         self.dxf_thread = DxfConvertThread(
-            dxf_path=self.lineEdit12.text(),
-            layer_name=self.lineEdit13.text(),
+            dxf_path=dxf_path,
+            layer_name=layer_name,
+            output_path=output_path,
+            output_gdb=output_gdb,
+            output_layer=output_layer,
+            output_type=output_type,
             parent=self
         )
         

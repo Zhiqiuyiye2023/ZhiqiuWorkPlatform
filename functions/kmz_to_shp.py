@@ -3,9 +3,9 @@
 KMZ转SHP格式功能
 """
 
-from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QFileDialog, QMessageBox
-from qfluentwidgets import (PrimaryPushButton, TransparentPushButton, 
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QFileDialog, QMessageBox, QGroupBox
+from qfluentwidgets import (PrimaryPushButton, PushButton, LineEdit, ComboBox,
                            StateToolTip, TextEdit)
 from qfluentwidgets import FluentIcon as FIF
 from .base_function import BaseFunction
@@ -23,9 +23,12 @@ class KmzToShpThread(QThread):
     success = pyqtSignal(str)          # 成功信号，传递输出文件路径
     error = pyqtSignal(str)            # 错误信号
     
-    def __init__(self, kmz_path):
+    def __init__(self, kmz_path, output_path, output_type="SHP文件", output_layer=""):
         super().__init__()
         self.kmz_path = kmz_path
+        self.output_path = output_path
+        self.output_type = output_type
+        self.output_layer = output_layer
     
     def run(self):
         """执行KMZ转SHP转换"""
@@ -169,20 +172,19 @@ class KmzToShpThread(QThread):
                 # 创建GeoDataFrame
                 gdf = gpd.GeoDataFrame(features, crs='EPSG:4326')
                 
-                # 生成输出路径
-                output_dir = os.path.dirname(self.kmz_path)
-                base_name = os.path.splitext(os.path.basename(self.kmz_path))[0]
-                shp_path = os.path.join(output_dir, f"{base_name}.shp")
-                
-                # 保存为SHP文件
-                self.log_signal.emit(f"正在保存SHP文件: {os.path.basename(shp_path)}")
-                gdf.to_file(shp_path, encoding='utf-8')
+                # 根据输出类型保存文件
+                if self.output_type == "SHP文件":
+                    self.log_signal.emit(f"正在保存SHP文件: {os.path.basename(self.output_path)}")
+                    gdf.to_file(self.output_path, encoding='utf-8')
+                else:
+                    self.log_signal.emit(f"正在保存GDB图层: {self.output_layer}")
+                    gdf.to_file(self.output_path, layer=self.output_layer, driver='OpenFileGDB')
                 
                 self.log_signal.emit(f"转换完成！")
-                self.log_signal.emit(f"输出文件: {shp_path}")
+                self.log_signal.emit(f"输出文件: {self.output_path}")
                 
                 # 发送成功信号
-                self.success.emit(shp_path)
+                self.success.emit(self.output_path)
                 
         except Exception as e:
             import traceback
@@ -207,50 +209,150 @@ class KmzToShpFunction(BaseFunction):
     
     def _initUI(self):
         """初始化界面"""
-        # 功能说明标签
-        infoLabel = QLabel(
-            "📢 <span style='color: orange; font-weight: bold;'>功能说明：</span>"
-            "<br>1. 选择KMZ文件进行转换"
-            "<br>2. 转换后的SHP文件将保存到原KMZ文件目录"
-            "<br>3. 支持点、线、面等几何类型"
-            "<br>4. 自动处理坐标系转换"
-        )
-        infoLabel.setWordWrap(True)
-        infoLabel.setStyleSheet('''
-            QLabel {
-                padding: 10px 0 18px 0;
-                font-size: 13px;
-                line-height: 1.5;
-            }
-        ''')
-        self.contentLayout.addWidget(infoLabel)
+        # 输入设置区域
+        input_group = QGroupBox("输入设置", self)
+        input_layout = QVBoxLayout(input_group)
         
-        # 按钮和控件布局
-        buttonLayout = QHBoxLayout()
+        # KMZ文件选择
+        kmz_layout = QHBoxLayout()
+        kmz_label = QLabel("KMZ文件：")
+        self.filePathLabel = LineEdit(self)
+        self.filePathLabel.setPlaceholderText("选择要转换的KMZ文件")
+        self.filePathLabel.setReadOnly(True)
         
-        # 执行按钮
-        self.executeBtn = PrimaryPushButton(self.tr('开始转换'), self, FIF.SEND)
-        self.executeBtn.clicked.connect(self.execute)
-        buttonLayout.addWidget(self.executeBtn)
-        
-        # 添加KMZ文件按钮
-        self.addKmzBtn = TransparentPushButton(self.tr('添加KMZ文件'), self, FIF.DOCUMENT)
+        self.addKmzBtn = PushButton("选择文件", self, FIF.DOCUMENT)
         self.addKmzBtn.clicked.connect(self._selectKmzFile)
-        buttonLayout.addWidget(self.addKmzBtn)
         
-        # 文件路径标签
-        self.filePathLabel = QLabel("")
-        buttonLayout.addWidget(self.filePathLabel)
+        kmz_layout.addWidget(kmz_label)
+        kmz_layout.addWidget(self.filePathLabel, 1)
+        kmz_layout.addWidget(self.addKmzBtn)
+        input_layout.addLayout(kmz_layout)
         
-        self.contentLayout.addLayout(buttonLayout)
+        # 输出设置区域
+        output_group = QGroupBox("输出设置", self)
+        output_layout = QVBoxLayout(output_group)
+        
+        # 输出类型选择
+        output_type_layout = QHBoxLayout()
+        output_type_label = QLabel("输出类型：")
+        self.output_type_combo = ComboBox(self)
+        self.output_type_combo.addItems(["SHP文件", "GDB图层"])
+        self.output_type_combo.currentTextChanged.connect(self._on_output_type_changed)
+        
+        output_type_layout.addWidget(output_type_label)
+        output_type_layout.addWidget(self.output_type_combo, 1)
+        output_layout.addLayout(output_type_layout)
+        
+        # SHP输出路径
+        self.shp_output_layout = QHBoxLayout()
+        shp_output_label = QLabel("SHP输出路径：")
+        self.output_path_edit = LineEdit(self)
+        self.output_path_edit.setPlaceholderText("选择输出SHP文件路径")
+        self.output_path_edit.setReadOnly(True)
+        
+        self.output_shp_btn = PushButton("选择输出路径", self, FIF.SAVE)
+        self.output_shp_btn.clicked.connect(self._selectOutputFile)
+        
+        self.shp_output_layout.addWidget(shp_output_label)
+        self.shp_output_layout.addWidget(self.output_path_edit, 1)
+        self.shp_output_layout.addWidget(self.output_shp_btn)
+        output_layout.addLayout(self.shp_output_layout)
+        
+        # GDB输出设置
+        self.gdb_output_layout = QHBoxLayout()
+        gdb_output_label = QLabel("GDB输出路径：")
+        self.output_gdb_path = LineEdit(self)
+        self.output_gdb_path.setPlaceholderText("选择输出GDB文件路径")
+        self.output_gdb_path.setReadOnly(True)
+        
+        self.output_gdb_btn = PushButton("选择GDB", self, FIF.FOLDER)
+        self.output_gdb_btn.clicked.connect(self._select_output_gdb)
+        
+        self.gdb_output_layout.addWidget(gdb_output_label)
+        self.gdb_output_layout.addWidget(self.output_gdb_path, 1)
+        self.gdb_output_layout.addWidget(self.output_gdb_btn)
+        output_layout.addLayout(self.gdb_output_layout)
+        
+        # GDB图层名称设置
+        self.gdb_layer_layout = QHBoxLayout()
+        gdb_layer_label = QLabel("GDB图层名称：")
+        self.output_gdb_layer = LineEdit(self)
+        self.output_gdb_layer.setPlaceholderText("输入输出图层名称")
+        
+        self.gdb_layer_layout.addWidget(gdb_layer_label)
+        self.gdb_layer_layout.addWidget(self.output_gdb_layer, 1)
+        output_layout.addLayout(self.gdb_layer_layout)
+        
+        # 初始显示SHP输出选项
+        self._on_output_type_changed("SHP文件")
+        
+        # 将分组框添加到主布局
+        self.contentLayout.addWidget(input_group)
+        self.contentLayout.addWidget(output_group)
         
         # 日志显示区域
         self.logText = TextEdit(self)
         self.logText.setReadOnly(True)
         self.logText.setPlaceholderText("转换日志将显示在这里...")
         self.logText.setFixedHeight(200)
-        self.logText.setFixedWidth(1070)
         self.contentLayout.addWidget(self.logText)
+        
+        # 添加执行按钮
+        self.executeBtn = PrimaryPushButton("开始转换", self, FIF.PLAY)
+        self.executeBtn.clicked.connect(self.execute)
+        self.contentLayout.addWidget(self.executeBtn, 0, Qt.AlignmentFlag.AlignCenter)
+    
+    def _on_output_type_changed(self, output_type):
+        """输出类型变化处理"""
+        if output_type == "SHP文件":
+            for i in range(self.shp_output_layout.count()):
+                widget = self.shp_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
+            
+            for i in range(self.gdb_output_layout.count()):
+                widget = self.gdb_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+            
+            for i in range(self.gdb_layer_layout.count()):
+                widget = self.gdb_layer_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+        else:
+            for i in range(self.shp_output_layout.count()):
+                widget = self.shp_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(False)
+            
+            for i in range(self.gdb_output_layout.count()):
+                widget = self.gdb_output_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
+            
+            for i in range(self.gdb_layer_layout.count()):
+                widget = self.gdb_layer_layout.itemAt(i).widget()
+                if widget:
+                    widget.setVisible(True)
+    
+    def _select_output_gdb(self):
+        """选择输出GDB文件"""
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        file_path = QFileDialog.getExistingDirectory(
+            self, "选择输出GDB文件", "."
+        )
+        
+        if file_path:
+            if not file_path.lower().endswith('.gdb'):
+                InfoBar.warning(
+                    title="警告",
+                    content="请选择GDB文件",
+                    parent=self,
+                    position=InfoBarPosition.TOP_RIGHT
+                )
+                return
+            
+            self.output_gdb_path.setText(file_path)
     
     def _selectKmzFile(self):
         """选择KMZ文件"""
@@ -259,6 +361,20 @@ class KmzToShpFunction(BaseFunction):
         )
         if file_path:
             self.filePathLabel.setText(file_path)
+            # 设置默认输出路径
+            base_path, ext = os.path.splitext(file_path)
+            default_path = f"{base_path}.shp"
+            self.output_path_edit.setText(default_path)
+    
+    def _selectOutputFile(self):
+        """选择SHP输出文件"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "保存SHP文件", "", "SHP文件 (*.shp)"
+        )
+        if file_path:
+            if not file_path.endswith('.shp'):
+                file_path += '.shp'
+            self.output_path_edit.setText(file_path)
     
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
@@ -270,6 +386,18 @@ class KmzToShpFunction(BaseFunction):
         
         if not self.filePathLabel.text().lower().endswith('.kmz'):
             return False, "请选择有效的KMZ文件"
+        
+        output_type = self.output_type_combo.currentText()
+        if output_type == "SHP文件":
+            if not self.output_path_edit.text():
+                return False, "请选择SHP输出路径"
+        else:
+            if not self.output_gdb_path.text():
+                return False, "请选择GDB输出路径"
+            if not self.output_gdb_path.text().lower().endswith('.gdb'):
+                return False, "请选择有效的GDB文件"
+            if not self.output_gdb_layer.text():
+                return False, "请输入GDB图层名称"
         
         return True, ""
     
@@ -293,11 +421,19 @@ class KmzToShpFunction(BaseFunction):
         # 清除之前的日志
         self.logText.clear()
         
-        # 获取KMZ文件路径
+        # 获取参数
         kmz_path = self.filePathLabel.text()
+        output_type = self.output_type_combo.currentText()
+        
+        if output_type == "SHP文件":
+            output_path = self.output_path_edit.text()
+            output_layer = ""
+        else:
+            output_path = self.output_gdb_path.text()
+            output_layer = self.output_gdb_layer.text()
         
         # 创建转换线程
-        self.kmz_thread = KmzToShpThread(kmz_path)
+        self.kmz_thread = KmzToShpThread(kmz_path, output_path, output_type, output_layer)
         
         # 连接信号槽
         self.kmz_thread.log_signal.connect(self._on_kmz_log)
@@ -317,8 +453,11 @@ class KmzToShpFunction(BaseFunction):
     
     def _on_kmz_success(self, shp_path):
         """KMZ转SHP成功处理"""
-        # 显示成功信息
-        self.showSuccess(f"KMZ转SHP成功！\n输出文件: {shp_path}")
+        output_type = self.output_type_combo.currentText()
+        if output_type == "SHP文件":
+            self.showSuccess(f"KMZ转SHP成功！\n输出文件: {shp_path}")
+        else:
+            self.showSuccess(f"KMZ转GDB成功！\n输出GDB: {shp_path}\n输出图层: {self.output_gdb_layer.text()}")
         self._running = False
         if hasattr(self, 'stateTooltip') and self.stateTooltip:
             try:

@@ -150,65 +150,139 @@ def 获取矢量要素中心点(vector_path, naming_field=None):
         raise Exception(f'获取中心点失败: {str(e)}')
 
 
-def 根据矢量字段分离要素(file_path, field_name):
+def 根据矢量字段分离要素(file_path, field_name, output_path=None, output_type="SHP文件"):
     """
     根据矢量字段分离要素并创建压缩文件
+    
+    Args:
+        file_path: 矢量文件路径，可以是SHP文件或GDB图层路径（格式为"GDB路径|图层名称"）
+        field_name: 用于分离的字段名
+        output_path: 输出路径，默认为源文件目录
+        output_type: 输出类型，"SHP文件"或"GDB图层"
+    
+    Returns:
+        结果信息字符串
     """
     import os
     import shutil
     import zipfile
     from datetime import datetime
     
-    # 读取文件
-    data = gpd.read_file(file_path)
-    grouped_data = data.groupby(field_name)
+    # 处理GDB图层路径
+    gdf = None
+    source_path = file_path
+    
+    if "|" in file_path:
+        # GDB图层路径，格式为 "GDB路径|图层名称"
+        gdb_path, layer_name = file_path.split("|", 1)
+        gdf = gpd.read_file(gdb_path, layer=layer_name)
+        source_path = gdb_path
+    else:
+        # SHP文件路径
+        gdf = gpd.read_file(file_path)
+    
+    grouped_data = gdf.groupby(field_name)
+    
+    # 设置输出路径
+    if not output_path:
+        folder_path = os.path.dirname(source_path)
+    else:
+        folder_path = output_path
     
     # 创建文件夹
-    folder_path = os.path.dirname(file_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_folder = os.path.join(folder_path, f"压缩版_{timestamp}")
+    
+    # 如果输出类型是GDB图层，将zip保存到GDB同级目录
+    if output_type == "输出到GDB图层" and output_path.endswith('.gdb'):
+        # GDB同级目录
+        zip_folder = os.path.join(os.path.dirname(output_path), f"压缩版_{timestamp}")
+    else:
+        # 其他情况，使用原逻辑
+        zip_folder = os.path.join(folder_path, f"压缩版_{timestamp}")
+    
     os.makedirs(zip_folder, exist_ok=True)
     
     # 获取原始文件信息
-    original_cpg = os.path.splitext(file_path)[0] + '.cpg'
-    original_fix = os.path.splitext(file_path)[0] + '.fix'
+    if not "|" in file_path:
+        original_cpg = os.path.splitext(file_path)[0] + '.cpg'
+        original_fix = os.path.splitext(file_path)[0] + '.fix'
+    else:
+        original_cpg = None
+        original_fix = None
     
     # 分组处理
     for tbbh, group in grouped_data:
-        # 创建子文件夹
-        tbbh_folder_path = os.path.join(folder_path, str(tbbh))
-        if not os.path.exists(tbbh_folder_path):
-            os.makedirs(tbbh_folder_path)
-        
-        # 保存分组数据
-        output_file = os.path.join(tbbh_folder_path, f'{tbbh}.shp')
-        group.to_file(output_file)
-        
-        # 处理辅助文件
-        if os.path.exists(original_cpg):
-            shutil.copy2(original_cpg, os.path.join(tbbh_folder_path, f'{tbbh}.cpg'))
+        if output_type == "输出到SHP文件":
+            # 创建子文件夹
+            tbbh_folder_path = os.path.join(folder_path, str(tbbh))
+            if not os.path.exists(tbbh_folder_path):
+                os.makedirs(tbbh_folder_path)
+            
+            # 保存分组数据
+            output_file = os.path.join(tbbh_folder_path, f'{tbbh}.shp')
+            group.to_file(output_file)
+            
+            # 处理辅助文件
+            if original_cpg and os.path.exists(original_cpg):
+                shutil.copy2(original_cpg, os.path.join(tbbh_folder_path, f'{tbbh}.cpg'))
+            else:
+                with open(os.path.join(tbbh_folder_path, f'{tbbh}.cpg'), 'w', encoding='utf-8') as f:
+                    f.write('utf-8')
+            
+            if original_fix and os.path.exists(original_fix):
+                shutil.copy2(original_fix, os.path.join(tbbh_folder_path, f'{tbbh}.fix'))
+            else:
+                with open(os.path.join(tbbh_folder_path, f'{tbbh}.fix'), 'w', encoding='utf-8') as f:
+                    f.write('')
+            
+            # 创建压缩文件
+            zip_filename = os.path.join(zip_folder, f"{tbbh}.zip")
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                base_name = os.path.splitext(output_file)[0]
+                for ext in ['.shp', '.dbf', '.shx', '.prj', '.cpg', '.fix']:
+                    file_path = base_name + ext
+                    if os.path.exists(file_path):
+                        arcname = os.path.basename(file_path)
+                        zipf.write(file_path, arcname)
         else:
-            with open(os.path.join(tbbh_folder_path, f'{tbbh}.cpg'), 'w', encoding='utf-8') as f:
-                f.write('utf-8')
-        
-        if os.path.exists(original_fix):
-            shutil.copy2(original_fix, os.path.join(tbbh_folder_path, f'{tbbh}.fix'))
-        else:
-            with open(os.path.join(tbbh_folder_path, f'{tbbh}.fix'), 'w', encoding='utf-8') as f:
-                f.write('')
-        
-        # 创建压缩文件
-        zip_filename = os.path.join(zip_folder, f"{tbbh}.zip")
-        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            base_name = os.path.splitext(output_file)[0]
-            for ext in ['.shp', '.dbf', '.shx', '.prj', '.cpg', '.fix']:
-                file_path = base_name + ext
-                if os.path.exists(file_path):
-                    arcname = os.path.basename(file_path)
-                    zipf.write(file_path, arcname)
+            # 输出到GDB图层
+            try:
+                # 确保输出路径是有效的GDB文件
+                if not output_path.endswith('.gdb'):
+                    raise ValueError("输出路径必须是有效的GDB文件")
+                
+                # 保存为GDB图层
+                layer_name = f"{field_name}_{tbbh}"
+                group.to_file(output_path, layer=layer_name, driver='OpenFileGDB')
+                
+                # 同时生成SHP文件用于压缩
+                temp_folder = os.path.join(folder_path, f"temp_{timestamp}")
+                os.makedirs(temp_folder, exist_ok=True)
+                temp_shp = os.path.join(temp_folder, f'{tbbh}.shp')
+                group.to_file(temp_shp)
+                
+                # 创建压缩文件
+                zip_filename = os.path.join(zip_folder, f"{tbbh}.zip")
+                with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    base_name = os.path.splitext(temp_shp)[0]
+                    for ext in ['.shp', '.dbf', '.shx', '.prj', '.cpg', '.fix']:
+                        file_path = base_name + ext
+                        if os.path.exists(file_path):
+                            arcname = os.path.basename(file_path)
+                            zipf.write(file_path, arcname)
+                
+                # 删除临时文件夹
+                shutil.rmtree(temp_folder)
+            except Exception as e:
+                print(f"保存GDB图层失败: {str(e)}")
+                continue
     
-    print(f"处理完成，共分离出{len(grouped_data)}个要素组，已保存到: {zip_folder}")
-    return zip_folder
+    result_msg = f"处理完成，共分离出{len(grouped_data)}个要素组"
+    result_msg += f"\n压缩文件已保存到: {zip_folder}"
+    result_msg += f"\n分离结果已保存到: {folder_path}"
+    
+    print(result_msg)
+    return result_msg
 
 
 def 融合要素(input_path, encoding='utf-8', field_name=None, layer_name=None):
@@ -399,7 +473,8 @@ def 标识要素(input_layers, output_path, encoding='utf-8'):
         # 执行标识分析
         print("执行标识分析...")
         # 使用geopandas的overlay方法，how='identify'相当于标识分析
-        result_gdf = gpd.overlay(target_gdf, identify_gdf, how='identity', keep_geom_type=False)
+        # 设置keep_geom_type=True，只保留原始几何类型，避免写入不同几何类型到SHP文件
+        result_gdf = gpd.overlay(target_gdf, identify_gdf, how='identity', keep_geom_type=True)
         
         # 处理重复列名
         print("处理重复列名...")
