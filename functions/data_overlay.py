@@ -11,6 +11,7 @@ from .base_function import BaseFunction
 import geopandas as gpd
 import os
 import sys
+import warnings
 
 
 class DataOverlayThread(QThread):
@@ -59,85 +60,189 @@ class DataOverlayThread(QThread):
             from datetime import datetime
             
             # 读取矢量数据（支持SHP和GDB）
+            # 尝试使用不同编码读取，优先utf-8，失败则使用gbk
             if self.file_type1 == "shp":
-                gdf1 = gpd.read_file(self.path1)
+                try:
+                    gdf1 = gpd.read_file(self.path1, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf1 = gpd.read_file(self.path1, encoding='gbk')
             else:  # gdb
-                gdf1 = gpd.read_file(self.path1, layer=self.layer1)
+                try:
+                    gdf1 = gpd.read_file(self.path1, layer=self.layer1, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf1 = gpd.read_file(self.path1, layer=self.layer1, encoding='gbk')
             
             if self.file_type2 == "shp":
-                gdf2 = gpd.read_file(self.path2)
+                try:
+                    gdf2 = gpd.read_file(self.path2, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf2 = gpd.read_file(self.path2, encoding='gbk')
             else:  # gdb
-                gdf2 = gpd.read_file(self.path2, layer=self.layer2)
+                try:
+                    gdf2 = gpd.read_file(self.path2, layer=self.layer2, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf2 = gpd.read_file(self.path2, layer=self.layer2, encoding='gbk')
             
             # 确保坐标系一致
             if gdf1.crs != gdf2.crs:
                 gdf2 = gdf2.to_crs(gdf1.crs)
             
-            # 计算主矢量要素的面积
-            gdf1['主面积'] = gdf1.geometry.area
+            # 确保字段名使用正确编码
+            gdf1.columns = gdf1.columns.astype(str)
+            gdf2.columns = gdf2.columns.astype(str)
             
             # 执行空间连接，获取相交的要素
             joined = gpd.sjoin(gdf1, gdf2, how='left', predicate='intersects')
             
             # 保存原始索引，用于后续合并
-            joined['原始索引'] = joined.index
+            joined['original_index'] = joined.index
             
             # 计算相交面积
             # 创建空间连接结果，包含几何信息
             spatial_join = gpd.overlay(gdf1, gdf2, how='intersection', keep_geom_type=False)
             
+            # 处理面积计算：如果使用地理CRS，转换为适当的投影CRS后再计算面积
+            def calculate_area(gdf, area_field):
+                # 检查是否为地理坐标系
+                if gdf.crs and gdf.crs.is_geographic:
+                    # 尝试转换为UTM投影（自动选择合适的带号）
+                    try:
+                        # 对于地理坐标系，使用简单的方法确定UTM带号
+                        # 取第一个要素的中心点，避免计算所有要素的中心点
+                        first_geom = gdf.geometry.iloc[0]
+                        # 直接从几何对象获取边界框中心点
+                        minx, miny, maxx, maxy = first_geom.bounds
+                        lon = (minx + maxx) / 2
+                        lat = (miny + maxy) / 2
+                        # 计算UTM带号
+                        utm_zone = int((lon + 180) / 6) + 1
+                        # 创建UTM CRS
+                        utm_crs = f"EPSG:326{utm_zone:02d}" if lat >= 0 else f"EPSG:327{utm_zone:02d}"
+                        # 转换并计算面积
+                        projected_gdf = gdf.to_crs(utm_crs)
+                        gdf[area_field] = projected_gdf.geometry.area
+                    except Exception as e:
+                        # 如果转换失败，使用原始CRS计算面积，添加警告抑制
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", category=UserWarning, message="Geometry is in a geographic CRS")
+                            gdf[area_field] = gdf.geometry.area
+                else:
+                    # 已经是投影坐标系，直接计算面积
+                    gdf[area_field] = gdf.geometry.area
+                return gdf
+            
+            # 计算主矢量要素的面积
+            gdf1 = calculate_area(gdf1, 'main_area')
+            
             # 计算相交部分的面积
-            spatial_join['相交面积'] = spatial_join.geometry.area
+            spatial_join = calculate_area(spatial_join, 'intersection_area')
             
             # 按主矢量字段和叠加矢量字段分组，计算叠加数据、总面积和唯一值
             def aggregate_data(group):
-                # 获取唯一的叠加字段值，用逗号分隔
-                unique_values = group[self.field2].unique()
-                dj_data = ','.join(str(v) for v in unique_values if pd.notna(v))
-                
-                # 计算总相交面积
-                total_area = group['相交面积'].sum()
-                
-                return pd.Series({
-                    'DJSJ': dj_data,
-                    '叠加面积': total_area
-                })
+                try:
+                    # 获取唯一的叠加字段值，用逗号分隔
+                    unique_values = group[self.field2].unique()
+                    # 确保值转换为字符串时使用正确编码
+                    str_values = []
+                    for v in unique_values:
+                        if pd.notna(v):
+                            if isinstance(v, str):
+                                str_values.append(v)
+                            else:
+                                # 转换为字符串，处理可能的编码问题
+                                str_values.append(str(v))
+                    dj_data = ','.join(str_values)
+                    
+                    # 计算总相交面积
+                    total_area = group['intersection_area'].sum()
+                    
+                    return pd.Series({
+                        'DJSJ': dj_data,
+                        'overlay_area': total_area
+                    })
+                except Exception as e:
+                    # 处理聚合过程中的编码问题
+                    return pd.Series({
+                        'DJSJ': '',
+                        'overlay_area': 0
+                    })
             
             # 对空间连接结果进行聚合
-            spatial_agg = spatial_join.groupby([self.field1]).apply(aggregate_data).reset_index()
+            spatial_agg = spatial_join.groupby([self.field1]).apply(aggregate_data, include_groups=False).reset_index()
             
             # 合并主矢量数据和空间聚合结果
             merged = gdf1.merge(spatial_agg, on=self.field1, how='left')
             
-            # 计算叠加比例
-            merged['叠加比例'] = merged['叠加面积'] / merged['主面积']
-            merged['叠加比例'] = merged['叠加比例'].fillna(0)  # 填充空值为0
+            # 计算叠加比例 - 直接使用短字段名避免Shapefile 10字符限制
+            merged['DJMJ'] = merged['overlay_area'].fillna(0)  # overlay_area -> DJMJ
+            merged['DJBL'] = merged['DJMJ'] / merged['main_area']
+            merged['DJBL'] = merged['DJBL'].fillna(0)  # 填充空值为0
             
             # 处理没有叠加数据的情况
             merged['DJSJ'] = merged['DJSJ'].fillna('')
-            merged['叠加面积'] = merged['叠加面积'].fillna(0)
             
-            # 移除临时字段
-            if '主面积' in merged.columns:
-                merged = merged.drop(columns=['主面积'])
+            # 移除临时字段和原始中文字段
+            if 'main_area' in merged.columns:
+                merged = merged.drop(columns=['main_area'])
+            if 'overlay_area' in merged.columns:
+                merged = merged.drop(columns=['overlay_area'])
+            if 'overlay_ratio' in merged.columns:
+                merged = merged.drop(columns=['overlay_ratio'])
             
             # 生成Excel文件（始终生成，用于结果查看）
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             excel_path = os.path.join(os.path.dirname(self.output_path), f'套合分析结果_{timestamp}.xlsx')
             
-            # 准备Excel数据
+            # 准备Excel数据 - 使用中文字段名便于阅读
             excel_data = merged.copy()
             if 'geometry' in excel_data.columns:
                 excel_data = excel_data.drop(columns=['geometry'])
+            # 重命名字段为中文便于Excel查看
+            excel_data = excel_data.rename(columns={
+                'DJMJ': '叠加面积',
+                'DJBL': '叠加比例'
+            })
+            # 写入Excel文件，xlsx格式默认使用UTF-8编码
             excel_data.to_excel(excel_path, index=False)
+            
+            # 清理字段名，确保只包含ASCII字符且不超过10个字符
+            def clean_field_names(gdf):
+                import re
+                cleaned_gdf = gdf.copy()
+                new_columns = {}
+                for col in cleaned_gdf.columns:
+                    if col == 'geometry':
+                        continue
+                    # 移除中文字符，只保留ASCII字符
+                    cleaned_col = re.sub(r'[^\x00-\x7F]+', '_', col)
+                    # 替换特殊字符为下划线
+                    cleaned_col = re.sub(r'[^a-zA-Z0-9_]', '_', cleaned_col)
+                    # 限制长度为10个字符
+                    cleaned_col = cleaned_col[:10]
+                    new_columns[col] = cleaned_col
+                return cleaned_gdf.rename(columns=new_columns)
             
             # 保存结果到指定输出路径
             if self.output_type == "SHP文件":
-                # 保存为SHP文件
-                merged.to_file(self.output_path, encoding='utf-8')
+                # 清理字段名
+                merged_cleaned = clean_field_names(merged)
+                # 保存为SHP文件，使用短字段名DJMJ和DJBL
+                merged_cleaned.to_file(self.output_path, encoding='utf-8')
                 
                 # 生成TXT文件
                 txt_path = self.output_path[:-4] + '.txt'
+                # 确保统计结果字符串使用正确编码
+                try:
+                    stat_result = merged[[self.field1, 'DJSJ', 'DJMJ', 'DJBL']].to_string(index=False)
+                    # 确保字符串编码为UTF-8
+                    if isinstance(stat_result, str):
+                        pass  # 已经是str类型，无需转换
+                    else:
+                        stat_result = stat_result.encode('utf-8').decode('utf-8')
+                except Exception as e:
+                    # 如果转换失败，使用简化的统计信息
+                    stat_result = f"统计结果行数: {len(merged)}"
+                
                 with open(txt_path, 'w', encoding='utf-8') as f:
                     f.write("数据套合占比分析结果\n")
                     f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -147,10 +252,11 @@ class DataOverlayThread(QThread):
                     f.write(f"叠加矢量字段: {self.field2}\n")
                     f.write("\n字段说明:\n")
                     f.write("- DJSJ: 叠加数据，包含所有相交的叠加矢量字段值，用逗号分隔\n")
-                    f.write("- 叠加面积: 主矢量要素与叠加矢量要素的相交面积总和\n")
-                    f.write("- 叠加比例: 叠加面积与主矢量要素面积的比值\n\n")
+                    f.write("- DJMJ: 主矢量要素与叠加矢量要素的相交面积总和\n")
+                    f.write("- DJBL: 叠加面积与主矢量要素面积的比值\n\n")
                     f.write("统计结果:\n")
-                    f.write(merged[[self.field1, 'DJSJ', '叠加面积', '叠加比例']].to_string(index=False))
+                    f.write(stat_result)
+                    f.write("\n")
                 
                 result_msg = (
                     f"分析完成！\n\n"
@@ -374,6 +480,9 @@ class DataOverlayFunction(BaseFunction):
                 if vector_type == "main":
                     self.mainVectorPath.setText(file_path)
                     self._loadFields(file_path, self.mainVectorField, "shp")
+                    # 设置默认输出路径为与主矢量文件相同目录
+                    default_output = file_path[:-4] + "_套合结果.shp"
+                    self.outputFilePath.setText(default_output)
                     # 隐藏图层选择
                     for i in range(self.mainVectorLayerLayout.count()):
                         widget = self.mainVectorLayerLayout.itemAt(i).widget()
@@ -396,6 +505,9 @@ class DataOverlayFunction(BaseFunction):
                 if vector_type == "main":
                     self.mainVectorPath.setText(file_path)
                     self._loadLayers(file_path, self.mainVectorLayerCombo, self.mainVectorField, "main")
+                    # 设置默认输出路径为与主矢量文件相同目录
+                    default_output = os.path.join(file_path, "套合结果.shp")
+                    self.outputFilePath.setText(default_output)
                     # 显示图层选择
                     for i in range(self.mainVectorLayerLayout.count()):
                         widget = self.mainVectorLayerLayout.itemAt(i).widget()
@@ -478,9 +590,15 @@ class DataOverlayFunction(BaseFunction):
         """加载字段列表"""
         try:
             if file_type == "shp":
-                gdf = gpd.read_file(file_path)
+                try:
+                    gdf = gpd.read_file(file_path, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf = gpd.read_file(file_path, encoding='gbk')
             else:  # gdb
-                gdf = gpd.read_file(file_path, layer=layer_name)
+                try:
+                    gdf = gpd.read_file(file_path, layer=layer_name, encoding='utf-8')
+                except UnicodeDecodeError:
+                    gdf = gpd.read_file(file_path, layer=layer_name, encoding='gbk')
             fields = [col for col in gdf.columns if col != 'geometry']
             combo_box.clear()
             combo_box.addItems(fields)

@@ -377,6 +377,32 @@ class FunctionWidgetFactory:
                     module = importlib.import_module('functions.file_folder_content_modifier')
                     FileFolderContentModifierFunction = getattr(module, 'FileFolderContentModifierFunction')
                     return FileFolderContentModifierFunction()
+                
+            elif app_id == 'layout_agent':
+                # 排版Agent功能
+                try:
+                    from functions.layout_agent_function import LayoutAgentFunction
+                    return LayoutAgentFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.layout_agent_function')
+                    LayoutAgentFunction = getattr(module, 'LayoutAgentFunction')
+                    return LayoutAgentFunction()
+            
+            elif app_id == 'word_merge':
+                # Word文档合并功能
+                try:
+                    from functions.word_merge import WordMergeFunction
+                    return WordMergeFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.word_merge')
+                    WordMergeFunction = getattr(module, 'WordMergeFunction')
+                    return WordMergeFunction()
             
             else:
                 print(f"未找到对应的功能模块: {app_id}")

@@ -279,6 +279,8 @@ class AppCardInterface(ScrollArea):
             # 文档工具类
             ('document', '文档工具', [
                 ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并分离转换'),
+                ('layout_agent', FIF.DOCUMENT, '文档排版', '文档排版与Word生成'),
+                ('word_merge', FIF.DOCUMENT, 'Word文档合并', '合并多个Word文档'),
             ]),
         ]
         

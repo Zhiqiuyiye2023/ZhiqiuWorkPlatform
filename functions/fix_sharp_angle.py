@@ -40,6 +40,13 @@ class FixSharpAngleWorker(QThread):
             else:
                 main_gdf = gpd.read_file(self.main_vector_path)
             
+            # 检测是否需要转换切割长度单位
+            actual_cut_length = self.cut_length
+            if main_gdf.crs and main_gdf.crs.is_geographic:
+                # 如果是地理坐标系，将米转换为度数
+                # 1度约等于111320米（赤道附近）
+                actual_cut_length = self.cut_length / 111320
+            
             # 创建结果GeoDataFrame列表，用于存储新生成的要素
             result_features = []
             
@@ -66,7 +73,7 @@ class FixSharpAngleWorker(QThread):
                         continue
                 
                 # 修复尖锐角，同时收集修复位置
-                new_geometries, locations = self._fix_sharp_angle(geometry)
+                new_geometries, locations = self._fix_sharp_angle(geometry, actual_cut_length)
                 if new_geometries:
                     # 为每个新生成的几何创建一个新要素
                     for geom in new_geometries:
@@ -84,6 +91,26 @@ class FixSharpAngleWorker(QThread):
             # 创建结果GeoDataFrame
             result_gdf = gpd.GeoDataFrame(result_features, crs=main_gdf.crs)
             
+            # 清理字段名，确保只包含ASCII字符且不超过10个字符
+            def clean_field_names(gdf):
+                import re
+                cleaned_gdf = gdf.copy()
+                new_columns = {}
+                for col in cleaned_gdf.columns:
+                    if col == 'geometry':
+                        continue
+                    # 移除中文字符，只保留ASCII字符
+                    cleaned_col = re.sub(r'[^\x00-\x7F]+', '_', col)
+                    # 替换特殊字符为下划线
+                    cleaned_col = re.sub(r'[^a-zA-Z0-9_]', '_', cleaned_col)
+                    # 限制长度为10个字符
+                    cleaned_col = cleaned_col[:10]
+                    new_columns[col] = cleaned_col
+                return cleaned_gdf.rename(columns=new_columns)
+            
+            # 清理结果数据的字段名
+            result_gdf = clean_field_names(result_gdf)
+            
             # 创建输出目录
             output_dir = os.path.join(os.path.dirname(self.main_vector_path), "fixed_result")
             os.makedirs(output_dir, exist_ok=True)
@@ -92,8 +119,8 @@ class FixSharpAngleWorker(QThread):
             base_name = os.path.splitext(os.path.basename(self.main_vector_path))[0]
             output_path = os.path.join(output_dir, f"{base_name}_fixed.shp")
             
-            # 保存结果
-            result_gdf.to_file(output_path)
+            # 保存结果，指定编码为UTF-8
+            result_gdf.to_file(output_path, encoding='utf-8')
             
             # 保存修复位置矢量
             fixed_locations_path = None
@@ -103,11 +130,14 @@ class FixSharpAngleWorker(QThread):
                 fixed_points = [Point(location) for location in fixed_locations]
                 fixed_locations_gdf = gpd.GeoDataFrame(geometry=fixed_points, crs=main_gdf.crs)
                 # 添加修复角度信息
-                fixed_locations_gdf['修复角度阈值'] = self.angle_threshold
+                fixed_locations_gdf['fixed_angle_threshold'] = self.angle_threshold
                 
-                # 保存为SHP文件
+                # 清理修复位置矢量的字段名
+                fixed_locations_gdf = clean_field_names(fixed_locations_gdf)
+                
+                # 保存为SHP文件，指定编码为UTF-8
                 fixed_locations_path = os.path.join(output_dir, f"{base_name}_fixed_locations.shp")
-                fixed_locations_gdf.to_file(fixed_locations_path)
+                fixed_locations_gdf.to_file(fixed_locations_path, encoding='utf-8')
             
             # 发送结果
             self.result_generated.emit({
@@ -119,11 +149,11 @@ class FixSharpAngleWorker(QThread):
         except Exception as e:
             self.error_occurred.emit(str(e))
     
-    def _fix_sharp_angle(self, geometry):
+    def _fix_sharp_angle(self, geometry, cut_length):
         """修复尖锐角"""
         fixed_locations = []
         if isinstance(geometry, Polygon):
-            new_geometries, locations = self._fix_polygon_sharp_angle(geometry)
+            new_geometries, locations = self._fix_polygon_sharp_angle(geometry, cut_length)
             if locations:
                 fixed_locations.extend(locations)
             return new_geometries, fixed_locations
@@ -131,7 +161,7 @@ class FixSharpAngleWorker(QThread):
             # 处理MultiPolygon中的每个Polygon
             all_new_geometries = []
             for poly in geometry.geoms:
-                new_geometries, locations = self._fix_polygon_sharp_angle(poly)
+                new_geometries, locations = self._fix_polygon_sharp_angle(poly, cut_length)
                 if new_geometries:
                     all_new_geometries.extend(new_geometries)
                 if locations:
@@ -140,7 +170,7 @@ class FixSharpAngleWorker(QThread):
         # 只返回多边形类型的几何
         return [], fixed_locations
     
-    def _fix_polygon_sharp_angle(self, polygon):
+    def _fix_polygon_sharp_angle(self, polygon, cut_length):
         """修复多边形的尖锐角 - 切割等腰三角形，将一个要素变成两个要素"""
         import math
         
@@ -188,7 +218,7 @@ class FixSharpAngleWorker(QThread):
                 fixed_locations.append(curr_point)
                 
                 # 确保切割长度不超过边的长度
-                actual_cut_length = min(self.cut_length, len1, len2)
+                actual_cut_length = min(cut_length, len1, len2)
                 
                 # 计算第一条边上的切割点（从curr_point向prev_point方向）
                 # vec1是从curr_point指向prev_point，所以unit_vec1方向正确

@@ -72,6 +72,8 @@ class RecentAppsManager:
             'eliminate_overlap': '要素去重叠',
             'feature_intersection': '要素相交',
             'feature_crop': '要素裁剪',
+            'layout_agent': '文档排版',
+            'word_merge': 'Word文档合并',
         }
         
         # 应用图标映射
@@ -113,6 +115,8 @@ class RecentAppsManager:
             'eliminate_overlap': 'DELETE',
             'feature_intersection': 'LAYOUT',
             'feature_crop': 'CUT',
+            'layout_agent': 'DOCUMENT',
+            'word_merge': 'DOCUMENT',
         }
     
     def add_recent_app(self, app_id: str):

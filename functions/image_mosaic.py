@@ -11,21 +11,21 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QFileDialog, QHeaderView, QTableWidgetItem, QPushButton, QTableWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QFileDialog, QHeaderView, QTableWidgetItem, QPushButton
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from qfluentwidgets import ComboBox, PrimaryPushButton, ProgressBar, LineEdit
+from qfluentwidgets import ComboBox, PrimaryPushButton, ProgressBar, LineEdit, TableWidget
 from qfluentwidgets import FluentIcon as FIF
 from .base_function import BaseFunction
 
 
-class DragDropTableWidget(QTableWidget):
+class DragDropTableWidget(TableWidget):
     """支持拖拽的表格组件"""
     
     def __init__(self, parent=None, add_callback=None):
         super().__init__(parent)
         self.add_callback = add_callback
         self.setAcceptDrops(True)
-        self.setDragDropMode(QTableWidget.DragDropMode.DropOnly)
+        self.setDragDropMode(TableWidget.DragDropMode.DropOnly)
     
     def dragEnterEvent(self, e):
         if e and e.mimeData() and e.mimeData().hasUrls():
@@ -141,31 +141,12 @@ class ImageMosaicFunction(BaseFunction):
             for i in range(1, 5):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         
-        self.imageTable.setStyleSheet("""
-            QTableWidget {
-                background-color: #222;
-                color: #fff;
-                gridline-color: #444;
-                font-size: 14px;
-            }
-            QHeaderView::section {
-                background-color: #111;
-                color: #fff;
-                font-weight: bold;
-                border: 1px solid #444;
-            }
-            QTableWidget QTableCornerButton::section {
-                background-color: #111;
-                border: 1px solid #444;
-            }
-            QTableWidget::item:selected {
-                background-color: #444;
-                color: #fff;
-            }
-        """)
+        # 设置与表格比对功能一致的样式
+        self.imageTable.setAlternatingRowColors(True)
+        self.imageTable.setBorderVisible(True)
         
-        self.imageTable.setFixedWidth(1070)
-        self.contentLayout.addWidget(self.imageTable, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # 移除固定宽度，让表格自适应宽度
+        self.contentLayout.addWidget(self.imageTable)
         
         # 第三行：控件平铺一行
         fileParamLayout = QHBoxLayout()

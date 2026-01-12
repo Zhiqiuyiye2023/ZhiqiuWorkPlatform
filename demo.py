@@ -7,8 +7,10 @@ VERSION = "1.0.2"
 """
 python.exe -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
-pyinstaller -F -w --noconsole --icon="logo.ico" -n "知秋工作平台v0.8.7" demo.py
-
+专业版：
+pyinstaller -F -w --noconsole --icon="logo.ico" -n "知秋工作平台v1.0.2" demo.py
+控制台版：
+pyinstaller -F -c --icon="logo.ico" -n "知秋工作平台v1.0.2" demo.py
 验证驱动是否正常
 nvidia-smi
 卸载当前的 CPU 版本
