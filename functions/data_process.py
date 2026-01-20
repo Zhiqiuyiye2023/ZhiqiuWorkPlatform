@@ -4,6 +4,7 @@
 版本号: 0.0.5
 """
 
+import os
 from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, QFileDialog, QComboBox
 from qfluentwidgets import LineEdit, PushButton, TextEdit, ComboBox
 from qfluentwidgets import FluentIcon as FIF
@@ -12,15 +13,15 @@ import pandas as pd
 
 
 class DataProcessFunction(BaseFileProcessorFunction):
-    """数据处理功能"""
+    """文本重复整合功能"""
     
     def __init__(self, parent=None):
         description = (
-            "📢 <b>功能说明：</b><br>"
-            "单数据对应多信息处理<br>"
-            "从Excel文件中提取数据并进行处理"
+            "📢 <b>功能说明：</b><br>"+
+            "文本重复整合<br>"+
+            "将相同ID的重复文本内容整合到一起"
         )
-        super().__init__("数据处理", description, parent)
+        super().__init__("文本重复整合", description, parent)
         self._initUI()
     
     def _initUI(self):
@@ -31,6 +32,8 @@ class DataProcessFunction(BaseFileProcessorFunction):
         
         self.excel_edit = LineEdit(self)
         self.excel_edit.setPlaceholderText("请选择Excel文件")
+        # 添加文本变化信号，自动加载列名
+        self.excel_edit.textChanged.connect(self._auto_load_columns)
         
         self.excel_browse_button = PushButton("选择Excel", self, FIF.DOCUMENT)
         self.excel_browse_button.clicked.connect(lambda: self.browse_file(self.excel_edit, "Excel Files (*.xlsx *.xls)"))
@@ -41,21 +44,31 @@ class DataProcessFunction(BaseFileProcessorFunction):
         
         # 列选择区域
         column_layout = QHBoxLayout()
-        column_layout.addWidget(QLabel("序号列:"))
         
+        # 序号列
+        id_layout = QHBoxLayout()
+        id_label = QLabel("序号列:")
+        id_label.setStyleSheet("margin-right: 5px;")
         self.id_col_combo = ComboBox(self)
-        self.id_col_combo.setFixedWidth(150)
+        id_layout.addWidget(id_label)
+        id_layout.addWidget(self.id_col_combo, 1)  # 添加拉伸因子，让下拉框根据页面宽度适配
         
-        column_layout.addWidget(QLabel("关联内容列:"))
+        # 关联内容列
+        content_layout = QHBoxLayout()
+        content_label = QLabel("关联内容列:")
+        content_label.setStyleSheet("margin-right: 5px;")
         self.content_col_combo = ComboBox(self)
-        self.content_col_combo.setFixedWidth(150)
+        content_layout.addWidget(content_label)
+        content_layout.addWidget(self.content_col_combo, 1)  # 添加拉伸因子，让下拉框根据页面宽度适配
         
-        self.load_columns_button = PushButton("加载列名", self, FIF.SYNC)
-        self.load_columns_button.clicked.connect(self.load_excel_columns)
+        # 添加从Excel加载数据到处理结果显示区域的按钮
+        self.load_to_text_button = PushButton("加载到处理结果", self, FIF.SYNC)
+        self.load_to_text_button.clicked.connect(self.load_excel_to_text)
         
-        column_layout.addWidget(self.id_col_combo)
-        column_layout.addWidget(self.content_col_combo)
-        column_layout.addWidget(self.load_columns_button)
+        column_layout.addLayout(id_layout, 1)  # 添加拉伸因子，让两个布局均匀分配空间
+        column_layout.addSpacing(20)  # 添加间距
+        column_layout.addLayout(content_layout, 1)  # 添加拉伸因子，让两个布局均匀分配空间
+        column_layout.addWidget(self.load_to_text_button)
         self.contentLayout.addLayout(column_layout)
         
         # 数据显示区域
@@ -67,35 +80,74 @@ class DataProcessFunction(BaseFileProcessorFunction):
         # 按钮区域
         button_layout = QHBoxLayout()
         self.sample_button = PushButton("添加示例", self, FIF.EDIT)
+        self.clear_button = PushButton("清除", self, FIF.DELETE)
         self.process_button = PushButton("处理数据", self, FIF.ALIGNMENT)
         
         self.sample_button.clicked.connect(self.add_sample)
+        self.clear_button.clicked.connect(self.clear_text)
         self.process_button.clicked.connect(self.process_data)
         
         button_layout.addWidget(self.sample_button)
+        button_layout.addWidget(self.clear_button)
         button_layout.addWidget(self.process_button)
         self.contentLayout.addLayout(button_layout)
     
-    def load_excel_columns(self):
-        """加载Excel列名"""
+    def _auto_load_columns(self, text):
+        """自动加载Excel列名"""
+        if text and os.path.exists(text) and (text.endswith('.xlsx') or text.endswith('.xls')):
+            try:
+                import pandas as pd
+                df = pd.read_excel(text)
+                columns = df.columns.tolist()
+                
+                self.id_col_combo.clear()
+                self.content_col_combo.clear()
+                
+                self.id_col_combo.addItems(columns)
+                self.content_col_combo.addItems(columns)
+            except Exception as e:
+                # 自动加载失败不显示错误，仅在手动加载时显示
+                pass
+    
+    def load_excel_to_text(self):
+        """从Excel加载数据到处理结果显示区域"""
         excel_path = self.excel_edit.text()
+        id_col = self.id_col_combo.currentText()
+        content_col = self.content_col_combo.currentText()
+        
         if not excel_path:
             self.show_warning("警告", "请选择Excel文件")
             return
-            
+        
+        if not id_col or not content_col:
+            self.show_warning("警告", "请选择序号列和关联内容列")
+            return
+        
         try:
+            self.showProgress("正在从Excel加载数据...")
+            
+            # 读取Excel数据
             df = pd.read_excel(excel_path)
-            columns = df.columns.tolist()
             
-            self.id_col_combo.clear()
-            self.content_col_combo.clear()
+            # 确保选择的列存在
+            if id_col not in df.columns or content_col not in df.columns:
+                self.show_error("错误", "选择的列不存在于Excel文件中")
+                return
             
-            self.id_col_combo.addItems(columns)
-            self.content_col_combo.addItems(columns)
+            # 构建文本内容
+            text_content = ""
+            for _, row in df.iterrows():
+                id_value = str(row[id_col])
+                content_value = str(row[content_col])
+                text_content += f"{id_value}\t{content_value}\n"
             
-            self.show_success("成功", "列名加载完成")
+            # 将数据显示到处理结果区域
+            self.text_edit.setPlainText(text_content)
+            self.showSuccess("数据加载完成")
         except Exception as e:
-            self.show_error("错误", f"加载Excel列名时出错: {str(e)}")
+            self.show_error("错误", f"从Excel加载数据时出错: {str(e)}")
+        finally:
+            self.hideProgress()
     
     def add_sample(self):
         """添加示例数据"""
@@ -109,6 +161,11 @@ class DataProcessFunction(BaseFileProcessorFunction):
             "C\t7\n"
         )
         self.text_edit.setPlainText(sample_content)
+    
+    def clear_text(self):
+        """清除处理结果显示区域的内容"""
+        self.text_edit.clear()
+        self.showSuccess("已清除处理结果")
     
     def process_data(self):
         """处理数据"""

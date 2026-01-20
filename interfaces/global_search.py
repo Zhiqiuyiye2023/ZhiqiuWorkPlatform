@@ -103,14 +103,17 @@ class GlobalSearchDropdown(QWidget):
         # 应用数据 - 包含所有应用
         self.apps_data = [
             # 矢量处理类
+            ('feature_crop', FIF.CUT, '要素裁剪', '使用裁剪范围裁剪要素，支持输出到文件或GDB'),
+            ('eliminate_overlap', FIF.DELETE, '要素去重叠', '移除要素重叠区域并保留边界'),
+            ('feature_intersection', FIF.LAYOUT, '要素相交', '检测要素重叠区域，输出相交结果'),
             ('data_overlay', FIF.TILES, '数据叠加套合', '计算矢量数据套合占比'),
             ('field_split', FIF.CUT, '字段分离要素', '按字段值分离矢量要素'),
-            ('area_adjust', FIF.ZOOM, '面积调整要素', '按指定面积调整要素'),
             ('merge_features', FIF.ACCEPT, '合并要素', '合并目录所有要素'),
+            ('gdb_merger', FIF.FOLDER, 'GDB合并', 'GDB文件合并与处理'),
             ('dissolve_features', FIF.ACCEPT, '融合要素', '融合相同类型要素'),
             ('identify_features', FIF.MARKET, '标识要素', '支持图层添加与顺序调整'),
             ('fix_sharp_angle', FIF.CHECKBOX, '修复尖锐角', '修复矢量要素尖锐角'),
-            ('eliminate_features', FIF.DELETE, '消除面', '合并小面到邻近面'),
+            ('eliminate_features', FIF.DELETE, '消除面', '通过最大面积或最长边界规则合并小面到邻近面'),
             ('polygon_to_line', FIF.TAG, '要素面转线', '多边形转线要素'),
             ('change_map_tool', FIF.SYNC, '变更上图工具', '变更上图完整工作流'),
             ('spatial_join_fields', FIF.GLOBE, '空间挂接字段', '空间挂接要素字段'),
@@ -129,7 +132,7 @@ class GlobalSearchDropdown(QWidget):
             # 影像处理类
             ('image_mosaic', FIF.PHOTO, '影像拼接', '多影像拼接'),
             ('image_crop', FIF.CUT, '影像裁剪', '矢量裁剪影像'),
-            ('image_crop_by_admin_region', FIF.CUT, '影像裁剪-行政区', '按行政区裁剪影像'),
+
             
             # 坐标处理类
             ('center_point', FIF.PIN, '获取中心点', '获取要素中心坐标'),
@@ -137,20 +140,22 @@ class GlobalSearchDropdown(QWidget):
             
             # 文件处理类
             ('file_stat', FIF.FOLDER, '文件统计', '统计文件信息'),
-            ('move_copy', FIF.MOVE, '移动复制', '移动复制文件'),
-            ('data_process', FIF.ALIGNMENT, '数据处理', '单数据多信息处理'),
-            ('batch_rename', FIF.EDIT, '批量重命名', '批量重命名文件'),
+            ('data_process', FIF.ALIGNMENT, '文本重复整合', '将相同ID的重复文本内容整合到一起'),
             ('batch_change_extension', FIF.EDIT, '批量修改后缀', '批量修改后缀'),
-            ('batch_copy_move', FIF.SYNC, '批量操作', '批量复制移动'),
-            ('file_folder_content_modifier', FIF.EDIT, '文件内容修改', '修改文件名称内容'),
+            ('batch_copy_move', FIF.SYNC, '按列表批量操作', '批量按表格操作文件与文件夹'),
+            ('file_folder_content_modifier', FIF.EDIT, '文件名称修改', '修改文件名称内容'),
             
             # 数据分析类
             ('file_table_compare', FIF.SEARCH, '表格比对', '比对Excel表格'),
             ('trial_plan_summary', FIF.DOCUMENT, '试划成果统计', '管理边界面积计算'),
             ('feature_check', FIF.CHECKBOX, '要素常规检查', '检查要素问题'),
+            ('vector_statistics', FIF.DOCUMENT, '矢量统计', '矢量数据统计分析功能'),
             
             # 文档工具类
             ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并分离转换'),
+            ('layout_agent', FIF.DOCUMENT, '文档排版', '文档排版与Word生成'),
+            ('word_merge', FIF.DOCUMENT, 'Word文档合并', '合并多个Word文档'),
+            ('table_merge', FIF.DOCUMENT, '表格合并', '合并多个Excel/CSV表格'),
         ]
         
         self.result_items = []

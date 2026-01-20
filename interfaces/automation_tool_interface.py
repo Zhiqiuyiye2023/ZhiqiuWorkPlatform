@@ -6,9 +6,9 @@
 import os
 import sys
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSplitter,
-                             QListWidget, QListWidgetItem, QFileDialog, QGroupBox, QFormLayout,
+                             QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem, QFileDialog, QGroupBox, QFormLayout,
                              QCheckBox, QDoubleSpinBox, QFrame, QScrollArea, QMessageBox, QTabWidget,
-                             QDialog, QAbstractItemView, QLayout)  # 添加QLayout导入
+                             QDialog, QAbstractItemView, QLayout, QHeaderView)  # 添加QLayout和QHeaderView导入
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont
 from qfluentwidgets import (ScrollArea, isDarkTheme, CardWidget, PushButton, PrimaryPushButton,
@@ -37,6 +37,11 @@ class AutomationToolInterface(QWidget):
         from configs.config import cfg
         cfg.themeChanged.connect(self.updateTheme)
         self.updateTheme()
+        
+        # 初始化网页标题更新定时器
+        self.title_update_timer = QTimer(self)
+        self.title_update_timer.setInterval(1000)  # 每秒更新一次
+        self.title_update_timer.timeout.connect(self.updateBrowserStatus)
     
     class ModuleCard(CardWidget):
         """元素模块卡片控件"""
@@ -117,7 +122,8 @@ class AutomationToolInterface(QWidget):
             layout.addLayout(headerLayout)
             
             # 第2行：XPath表达式
-            xpathLayout = QHBoxLayout()
+            self.xpathContainer = QWidget()
+            xpathLayout = QHBoxLayout(self.xpathContainer)
             xpathLayout.setContentsMargins(0, 0, 0, 0)
             xpathLayout.setSpacing(6)  # 减小间距
             
@@ -133,7 +139,7 @@ class AutomationToolInterface(QWidget):
             self.xpathEdit.setFixedHeight(28)  # 调整高度
             xpathLayout.addWidget(self.xpathEdit, 1)  # 增加拉伸因子
             
-            layout.addLayout(xpathLayout)
+            layout.addWidget(self.xpathContainer)
             
             # 第3行：操作类型
             actionTypeLayout = QHBoxLayout()
@@ -147,7 +153,7 @@ class AutomationToolInterface(QWidget):
             
             self.actionTypeCombo = ComboBox()
             self.actionTypeCombo.setObjectName("actionTypeCombo")
-            self.actionTypeCombo.addItems(["输入文本", "点击", "选择下拉选项", "上传文件", "获取文本", "清除内容", "获取表格字段"])
+            self.actionTypeCombo.addItems(["输入文本", "点击", "选择下拉选项", "上传文件", "获取文本", "清除内容", "下载文件", "网页截图"])
             self.actionTypeCombo.setCurrentText(self.module.action_type)
             self.actionTypeCombo.currentIndexChanged.connect(self.onActionTypeChanged)
             self.actionTypeCombo.setFixedHeight(28)  # 调整高度
@@ -157,6 +163,7 @@ class AutomationToolInterface(QWidget):
             # 使用变量开关 - 根据操作类型动态显示
             self.variableSwitch = SwitchButton("使用变量")
             self.variableSwitch.setObjectName("variableSwitch")
+            self.variableSwitch.setOnText("使用变量")  # 设置开关打开时的文本与关闭时相同
             self.variableSwitch.setChecked(self.module.is_variable)
             # SwitchButton使用checkedChanged信号，不是toggled信号
             self.variableSwitch.checkedChanged.connect(self.onVariableSwitchChanged)
@@ -164,7 +171,7 @@ class AutomationToolInterface(QWidget):
             
             layout.addLayout(actionTypeLayout)
             
-            # 第4行：操作值、循环按钮
+            # 第4行：操作值、表格字段下拉框、循环按钮
             self.actionValueContainer = QWidget()
             actionValueLayout = QHBoxLayout(self.actionValueContainer)
             actionValueLayout.setContentsMargins(0, 0, 0, 0)
@@ -175,6 +182,7 @@ class AutomationToolInterface(QWidget):
             self.actionValueLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             actionValueLayout.addWidget(self.actionValueLabel)
             
+            # 操作值输入框
             self.actionValueEdit = LineEdit()
             self.actionValueEdit.setObjectName("actionValueEdit")
             self.actionValueEdit.setText(self.module.action_value)
@@ -182,13 +190,22 @@ class AutomationToolInterface(QWidget):
             self.actionValueEdit.setFixedHeight(28)  # 调整高度
             actionValueLayout.addWidget(self.actionValueEdit, 1)  # 增加拉伸因子
             
-            # 为获取文本操作类型添加循环按钮
-            self.loopBtn = PushButton(FIF.SYNC, "循环")
-            self.loopBtn.setObjectName("loopBtn")
-            self.loopBtn.setFixedHeight(28)  # 调整高度
-            self.loopBtn.setFixedWidth(70)  # 调整宽度
-            self.loopBtn.clicked.connect(self.onLoopBtnClicked)
-            actionValueLayout.addWidget(self.loopBtn)
+            # 表格字段下拉框（初始隐藏）
+            self.tableFieldCombo = ComboBox()
+            self.tableFieldCombo.setObjectName("tableFieldCombo")
+            self.tableFieldCombo.setPlaceholderText("选择表格字段")
+            self.tableFieldCombo.setFixedHeight(28)  # 调整高度
+            self.tableFieldCombo.setMinimumWidth(140)  # 调整最小宽度
+            self.tableFieldCombo.setVisible(False)  # 初始隐藏
+            actionValueLayout.addWidget(self.tableFieldCombo, 1)  # 增加拉伸因子
+            
+            # 下载板块下的所有src开关（仅对下载文件操作显示）
+            self.downloadAllSrcSwitch = SwitchButton("下载板块下的所有src")
+            self.downloadAllSrcSwitch.setObjectName("downloadAllSrcSwitch")
+            self.downloadAllSrcSwitch.setOnText("下载板块下的所有src")  # 设置开关打开时的文本与关闭时相同
+            self.downloadAllSrcSwitch.setChecked(getattr(self.module, 'download_all_src', False))
+            self.downloadAllSrcSwitch.setVisible(False)  # 初始隐藏
+            actionValueLayout.addWidget(self.downloadAllSrcSwitch, 0, Qt.AlignmentFlag.AlignVCenter)
             
             layout.addWidget(self.actionValueContainer)
             
@@ -212,235 +229,188 @@ class AutomationToolInterface(QWidget):
             
             layout.addWidget(self.variableContainer)
             
+            # 第6行：下载路径配置（仅对下载文件操作显示）
+            self.downloadPathContainer = QWidget()
+            downloadPathLayout = QHBoxLayout(self.downloadPathContainer)
+            downloadPathLayout.setContentsMargins(0, 0, 0, 0)
+            downloadPathLayout.setSpacing(6)  # 减小间距
+            
+            self.downloadPathLabel = QLabel("下载路径:")
+            self.downloadPathLabel.setFixedWidth(80)  # 调整标签宽度
+            self.downloadPathLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            downloadPathLayout.addWidget(self.downloadPathLabel)
+            
+            self.downloadPathEdit = LineEdit()
+            self.downloadPathEdit.setObjectName("downloadPathEdit")
+            self.downloadPathEdit.setText(getattr(self.module, 'download_path', ''))
+            self.downloadPathEdit.setPlaceholderText("下载路径，留空使用默认路径")
+            self.downloadPathEdit.setFixedHeight(28)  # 调整高度
+            downloadPathLayout.addWidget(self.downloadPathEdit, 1)  # 增加拉伸因子
+            
+            # 添加浏览按钮
+            self.browseBtn = PushButton(FIF.FOLDER, "浏览")
+            self.browseBtn.setObjectName("browseBtn")
+            self.browseBtn.setFixedHeight(28)  # 调整高度
+            self.browseBtn.setFixedWidth(100)  # 加宽按钮宽度
+            self.browseBtn.clicked.connect(self.onBrowseBtnClicked)
+            downloadPathLayout.addWidget(self.browseBtn)
+            
+            layout.addWidget(self.downloadPathContainer)
+            
+            # 第8行：截图类型配置（仅对网页截图操作显示）
+            # 移除局部截图功能，只保留全页面截图
+            self.screenshotConfigContainer = QWidget()
+            screenshotConfigLayout = QHBoxLayout(self.screenshotConfigContainer)
+            screenshotConfigLayout.setContentsMargins(0, 0, 0, 0)
+            screenshotConfigLayout.setSpacing(6)  # 减小间距
+            
+            # 截图类型选择 - 只保留全页面截图
+            screenshotTypeLabel = QLabel("截图类型:")
+            screenshotTypeLabel.setFixedWidth(80)  # 调整标签宽度
+            screenshotTypeLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            screenshotConfigLayout.addWidget(screenshotTypeLabel)
+            
+            self.screenshotTypeCombo = ComboBox()
+            self.screenshotTypeCombo.setObjectName("screenshotTypeCombo")
+            self.screenshotTypeCombo.addItems(["全页面截图"])  # 只保留全页面截图选项
+            # 获取模块的截图类型，如果不存在则使用默认值
+            screenshot_type = getattr(self.module, 'screenshot_type', '全页面截图')
+            self.screenshotTypeCombo.setCurrentText('全页面截图')  # 强制设置为全页面截图
+            self.screenshotTypeCombo.setFixedHeight(28)  # 调整高度
+            self.screenshotTypeCombo.setMinimumWidth(140)  # 调整最小宽度
+            self.screenshotTypeCombo.setEnabled(False)  # 禁用下拉框，只能选择全页面截图
+            screenshotConfigLayout.addWidget(self.screenshotTypeCombo)
+            
+            screenshotConfigLayout.addStretch()  # 增加拉伸因子，将元素挤到左侧
+            
+            layout.addWidget(self.screenshotConfigContainer)
+            
             # 初始状态处理
             self.onActionTypeChanged(self.actionTypeCombo.currentIndex())
-        
+            
+        def onBrowseBtnClicked(self):
+            """浏览按钮点击事件"""
+            from PyQt6.QtWidgets import QFileDialog
+            
+            # 打开文件夹选择对话框
+            folder_path = QFileDialog.getExistingDirectory(
+                self, 
+                "选择下载路径", 
+                self.downloadPathEdit.text() or ""
+            )
+            
+            if folder_path:
+                self.downloadPathEdit.setText(folder_path)
+                
+
         def onActionTypeChanged(self, index):
             """操作类型变化事件"""
             action_type = self.actionTypeCombo.currentText()
             
             # 确定哪些操作类型需要操作值和使用变量开关
-            # 获取文本也需要操作值和使用变量开关，用于比对文本是否正确
-            need_action_value = action_type in ["输入文本", "选择下拉选项", "上传文件", "获取表格字段", "获取文本"]
+            # 获取文本不需要操作值和使用变量开关，直接以模块名作为变量名
+            need_action_value = action_type in ["输入文本", "选择下拉选项", "上传文件", "下载文件", "网页截图"]
             
             # 显示或隐藏操作值相关容器
             self.actionValueContainer.setVisible(need_action_value)
             self.variableSwitch.setVisible(need_action_value)
             
             # 确定哪些操作类型需要变量名称
-            # 获取文本不再需要变量名称，改为使用操作值进行比对
-            need_variable_name = action_type in ["获取表格字段"]
+            # 当前没有操作类型需要变量名称
+            need_variable_name = False
             
             # 显示或隐藏变量名称相关容器
             self.variableContainer.setVisible(need_variable_name)
             
-            # 显示或隐藏循环功能控件
-            # 只有获取文本操作类型需要循环功能
-            if hasattr(self, 'loopBtn'):
-                self.loopBtn.setVisible(action_type == "获取文本")
+            # 显示或隐藏下载路径配置容器（对下载文件和网页截图操作显示）
+            is_download_action = action_type in ["下载文件", "网页截图"]
+            self.downloadPathContainer.setVisible(is_download_action)
+            
+            # 显示或隐藏下载板块下的所有src开关（仅对下载文件操作显示）
+            self.downloadAllSrcSwitch.setVisible(action_type == "下载文件")
+            
+            # 显示或隐藏XPath容器（网页截图不需要XPath）
+            self.xpathContainer.setVisible(action_type != "网页截图")
+            
+            # 隐藏截图类型容器（用户要求不显示截图类型）
+            self.screenshotConfigContainer.setVisible(False)
+            
+
         
         def onVariableSwitchChanged(self, checked):
             """使用变量开关变化事件"""
-            # 当使用变量时，可以在操作值中显示表格字段下拉选择
-            # 这里可以添加表格字段选择的逻辑
-            pass
-        
-        def onLoopBtnClicked(self):
-            """循环按钮点击事件 - 打开模块列表选择对话框"""
-            # 创建对话框
-            dialog = QDialog(self)
-            dialog.setWindowTitle("选择循环起始模块")
-            dialog.setFixedSize(400, 300)
-            
-            # 应用主题样式，确保在深色主题下显示正确
-            from qfluentwidgets import isDarkTheme
-            if isDarkTheme():
-                dialog.setStyleSheet("""
-                    QDialog {
-                        background-color: #2E2E2E;
-                        color: #FFFFFF;
-                    }
-                    QListWidget {
-                        background-color: #3E3E3E;
-                        color: #FFFFFF;
-                        border: 1px solid #555555;
-                        border-radius: 4px;
-                    }
-                    QListWidget::item {
-                        background-color: transparent;
-                    }
-                    QListWidget::item:selected {
-                        background-color: #0078D4;
-                        color: #FFFFFF;
-                    }
-                """)
+            # 当使用变量时，隐藏操作值输入框，显示表格字段下拉框
+            if checked:
+                self.actionValueEdit.setVisible(False)
+                self.tableFieldCombo.setVisible(True)
+                # 加载表格字段
+                self.loadTableFields()
             else:
-                dialog.setStyleSheet("""
-                    QDialog {
-                        background-color: #FFFFFF;
-                        color: #000000;
-                    }
-                    QListWidget {
-                        background-color: #F5F5F5;
-                        color: #000000;
-                        border: 1px solid #DDDDDD;
-                        border-radius: 4px;
-                    }
-                """)
+                self.actionValueEdit.setVisible(True)
+                self.tableFieldCombo.setVisible(False)
+        
+        def loadTableFields(self):
+            """加载表格字段到下拉框"""
+            # 清空现有选项
+            self.tableFieldCombo.clear()
             
-            # 对话框布局
-            layout = QVBoxLayout(dialog)
-            
-            # 添加说明文字
-            description_label = QLabel("选择循环起始模块，将形成从该模块到当前模块的循环链，直到当前模块判定通过。")
-            description_label.setWordWrap(True)
-            description_label.setStyleSheet("margin-bottom: 10px; font-size: 12px;")
-            layout.addWidget(description_label)
-            
-            # 模块列表
-            list_widget = QListWidget()
-            list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)  # 改为单选模式
-            
-            # 获取所有模块
+            # 获取表格字段
             # 正确获取AutomationToolInterface实例
             parent = None
             current_widget = self.parent()
             # 向上查找直到找到AutomationToolInterface实例
-            while current_widget and not hasattr(current_widget, 'module_cards'):
+            while current_widget and not hasattr(current_widget, 'automation_flow'):
                 current_widget = current_widget.parent()
             parent = current_widget
             
-            if parent and hasattr(parent, 'module_cards'):
-                for module_id, card in parent.module_cards.items():
-                    if module_id != self.module_id:  # 排除当前模块
-                        item = QListWidgetItem(card.nameEdit.text())
-                        item.setData(Qt.ItemDataRole.UserRole, module_id)
-                        list_widget.addItem(item)
-            
-            layout.addWidget(list_widget)
-            
-            # 按钮布局
-            button_layout = QHBoxLayout()
-            button_layout.addStretch()
-            
-            # 确定按钮
-            ok_btn = PushButton(FIF.ACCEPT, "确定")
-            # 初始状态下禁用确定按钮，因为还没有选择模块
-            ok_btn.setEnabled(False)
-            ok_btn.clicked.connect(lambda: self.onLoopModulesSelected(dialog, list_widget))
-            button_layout.addWidget(ok_btn)
-            
-            # 取消按钮
-            cancel_btn = PushButton(FIF.CLOSE, "取消")
-            cancel_btn.clicked.connect(dialog.reject)
-            button_layout.addWidget(cancel_btn)
-            
-            # 连接列表控件的选择变化信号，动态启用/禁用确定按钮
-            def onSelectionChanged():
-                selected_items = list_widget.selectedItems()
-                ok_btn.setEnabled(len(selected_items) > 0)
-            
-            list_widget.itemSelectionChanged.connect(onSelectionChanged)
-            
-            layout.addLayout(button_layout)
-            
-            # 显示对话框
-            dialog.exec()
-        
-        def _updateLoopButtonText(self):
-            """更新循环按钮文字，显示循环状态"""
-            # 检查模块是否有loop_start_module属性
-            if hasattr(self.module, 'loop_start_module') and self.module.loop_start_module:
-                # 显示循环起始模块名称
-                parent = self.parent()
-                while parent and not hasattr(parent, 'module_cards'):
-                    parent = parent.parent()
-                if parent and hasattr(parent, 'module_cards'):
-                    if self.module.loop_start_module in parent.module_cards:
-                        start_module_name = parent.module_cards[self.module.loop_start_module].nameEdit.text()
-                        self.loopBtn.setText(f"循环({start_module_name}...)")
-                    else:
-                        self.loopBtn.setText("循环")
+            if parent and hasattr(parent, 'automation_flow'):
+                # 获取表格字段
+                table_fields = parent.automation_flow.table_manager.get_fields()
+                if table_fields:
+                    # 先启用下拉框
+                    self.tableFieldCombo.setEnabled(True)
+                    self.tableFieldCombo.addItems(table_fields)
                 else:
-                    self.loopBtn.setText("循环")
+                    self.tableFieldCombo.addItem("无可用字段")
+                    self.tableFieldCombo.setEnabled(False)
             else:
-                self.loopBtn.setText("循环")
+                self.tableFieldCombo.addItem("无可用字段")
+                self.tableFieldCombo.setEnabled(False)
         
-        def onLoopModulesSelected(self, dialog, list_widget):
-            """循环模块选择确认"""
-            # 获取选中的模块 - 现在是单选
-            selected_module = None
-            selected_items = list_widget.selectedItems()
-            if selected_items:
-                selected_module = selected_items[0].data(Qt.ItemDataRole.UserRole)
-            
-            # 保存选中的模块到当前模块配置
-            if hasattr(self.module, 'loop_start_module'):
-                self.module.loop_start_module = selected_module
-            else:
-                self.module.loop_start_module = selected_module
-            
-            # 为起始模块和当前模块添加循环图标
-            parent = self.parent()
-            while parent and not hasattr(parent, 'module_cards'):
-                parent = parent.parent()
-            
-            # 统一导入ToolButton，避免未定义错误
-            from qfluentwidgets import ToolButton
-            
-            if parent and hasattr(parent, 'module_cards'):
-                # 先清除所有模块的循环图标
-                for card in parent.module_cards.values():
-                    if hasattr(card, 'loopIcon'):
-                        try:
-                            card.loopIcon.deleteLater()
-                            delattr(card, 'loopIcon')
-                        except RuntimeError:
-                            # 忽略已被删除的对象错误
-                            delattr(card, 'loopIcon')
-                
-                # 为起始模块添加循环图标
-                if selected_module and selected_module in parent.module_cards:
-                    start_card = parent.module_cards[selected_module]
-                    # 添加循环图标到起始模块卡片 - 使用ToolButton简化图标显示
-                    start_card.loopIcon = ToolButton(FIF.SYNC, self)
-                    start_card.loopIcon.setToolTip("循环起始模块")
-                    start_card.loopIcon.setFixedSize(20, 20)
-                    start_card.loopIcon.setStyleSheet("border: none; background: transparent;")
-                    # 将图标添加到起始模块卡片布局中
-                    if hasattr(start_card, 'nameEdit'):
-                        start_name_parent = start_card.nameEdit.parent()
-                        if start_name_parent and isinstance(start_name_parent, QLayout):
-                            start_name_parent.addWidget(start_card.loopIcon)
-                
-                # 为当前模块添加循环图标
-                current_card = parent.module_cards[self.module_id]
-                current_card.loopIcon = ToolButton(FIF.SYNC, self)
-                current_card.loopIcon.setToolTip("循环结束模块")
-                current_card.loopIcon.setFixedSize(20, 20)
-                current_card.loopIcon.setStyleSheet("border: none; background: transparent;")
-                # 将图标添加到当前模块卡片布局中
-                if hasattr(current_card, 'nameEdit'):
-                    current_name_parent = current_card.nameEdit.parent()
-                    if current_name_parent and isinstance(current_name_parent, QLayout):
-                        current_name_parent.addWidget(current_card.loopIcon)
-            
-            # 更新循环按钮文字，显示循环状态
-            self._updateLoopButtonText()
-            
-            dialog.accept()
-        
+
+
+
         def saveModule(self):
             """保存模块配置"""
             # 更新模块属性
             self.module.name = self.nameEdit.text() or "新模块"
             self.module.set_xpath(self.xpathEdit.text())
+            
+            # 确定操作值
+            action_value = ""
+            if self.variableSwitch.isChecked():
+                # 使用表格字段作为操作值
+                action_value = self.tableFieldCombo.currentText()
+            else:
+                # 使用操作值输入框中的值
+                action_value = self.actionValueEdit.text()
+            
             self.module.set_action(
                 self.actionTypeCombo.currentText(),
-                self.actionValueEdit.text(),
+                action_value,
                 self.variableSwitch.isChecked(),
                 self.variableNameEdit.text()
             )
+            
+            # 保存下载配置
+            if self.actionTypeCombo.currentText() == "下载文件":
+                self.module.download_path = self.downloadPathEdit.text()
+                self.module.download_all_src = self.downloadAllSrcSwitch.isChecked()
+            elif self.actionTypeCombo.currentText() == "网页截图":
+                # 保存网页截图配置
+                self.module.screenshot_path = self.downloadPathEdit.text()
+                self.module.screenshot_type = self.screenshotTypeCombo.currentText()
+            
             self.module.set_wait_time(self.waitTimeSpin.value())
             
             # 发送更新信号
@@ -457,11 +427,410 @@ class AutomationToolInterface(QWidget):
             self.variableNameEdit.setText(module.variable_name)
             self.waitTimeSpin.setValue(module.wait_time)
             
+            # 更新下载配置
+            if hasattr(module, 'download_path'):
+                self.downloadPathEdit.setText(module.download_path)
+            else:
+                self.downloadPathEdit.setText("")
+            
+            if hasattr(module, 'download_all_src'):
+                self.downloadAllSrcSwitch.setChecked(module.download_all_src)
+            else:
+                self.downloadAllSrcSwitch.setChecked(False)
+            
+            # 更新网页截图配置
+            if hasattr(module, 'screenshot_path'):
+                # 如果有screenshot_path属性，更新下载路径编辑框
+                self.downloadPathEdit.setText(module.screenshot_path)
+            
+            if hasattr(module, 'screenshot_type'):
+                # 如果有screenshot_type属性，更新截图类型组合框
+                self.screenshotTypeCombo.setCurrentText(module.screenshot_type)
+            else:
+                # 否则使用默认值
+                self.screenshotTypeCombo.setCurrentText('全页面截图')
+            
             # 触发操作类型变化事件，确保控件可见性正确
             self.onActionTypeChanged(self.actionTypeCombo.currentIndex())
             
-            # 更新循环按钮文字，显示选择的模块数量
-            self._updateLoopButtonText()
+            # 处理变量开关状态
+            if module.is_variable:
+                self.actionValueEdit.setVisible(False)
+                self.tableFieldCombo.setVisible(True)
+                # 加载表格字段
+                self.loadTableFields()
+                # 设置当前表格字段
+                if module.action_value:
+                    index = self.tableFieldCombo.findText(module.action_value)
+                    if index != -1:
+                        self.tableFieldCombo.setCurrentIndex(index)
+            else:
+                self.actionValueEdit.setVisible(True)
+                self.tableFieldCombo.setVisible(False)
+            
+    
+    class ConditionCard(CardWidget):
+        """条件模块卡片控件"""
+        
+        moduleUpdated = pyqtSignal(str)  # 模块更新信号
+        moduleDeleted = pyqtSignal(str)  # 模块删除信号
+        moduleMoved = pyqtSignal(str, bool)  # 模块移动信号 (module_id, is_up)
+        
+        def __init__(self, module, parent=None):
+            super().__init__(parent=parent)
+            self.module = module
+            self.module_id = module.module_id
+            self.setObjectName(f"conditionCard_{self.module_id}")
+            self.setupUI()
+            # 延迟加载表格字段和获取文本变量，确保模块已经被添加到列表中
+            QTimer.singleShot(100, self.delayedLoad)
+        
+        def delayedLoad(self):
+            """延迟加载表格字段和获取文本变量"""
+            self.loadTableFields()
+            self.loadTextVariables()
+        
+        def setupUI(self):
+            """设置卡片界面"""
+            # 主布局
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(10, 10, 10, 10)  # 调整外边距，使布局更紧凑
+            layout.setSpacing(6)  # 减小间距
+            self.setMinimumHeight(200)  # 设置足够的最小高度，给出预留空间
+            self.setFixedHeight(200)  # 设置固定高度，避免操作类型变化时调整布局
+            
+            # 第1行：模块名称、保存按钮
+            headerLayout = QHBoxLayout()
+            headerLayout.setContentsMargins(0, 0, 0, 0)
+            headerLayout.setSpacing(6)  # 减小间距
+            
+            # 模块名称 - 添加标签
+            nameLayout = QHBoxLayout()
+            nameLayout.setContentsMargins(0, 0, 0, 0)
+            nameLayout.setSpacing(4)
+            
+            nameLabel = QLabel("名称:")
+            nameLabel.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            nameLabel.setFixedWidth(50)  # 调整标签宽度
+            nameLayout.addWidget(nameLabel)
+            
+            self.nameEdit = LineEdit()
+            self.nameEdit.setObjectName("nameEdit")
+            self.nameEdit.setText(self.module.name)
+            self.nameEdit.setPlaceholderText("条件名称")
+            self.nameEdit.setFixedHeight(28)  # 调整高度
+            nameLayout.addWidget(self.nameEdit, 1)  # 增加拉伸因子
+            
+            headerLayout.addLayout(nameLayout, 2)  # 调整拉伸因子
+            
+            # 保存按钮
+            self.saveBtn = PushButton(FIF.SAVE, "保存")
+            self.saveBtn.setObjectName("saveBtn")
+            self.saveBtn.setFixedHeight(28)  # 调整高度
+            self.saveBtn.setFixedWidth(80)  # 增加宽度，确保文字完整显示
+            self.saveBtn.clicked.connect(self.saveModule)
+            headerLayout.addWidget(self.saveBtn, 0, Qt.AlignmentFlag.AlignVCenter)
+            
+            layout.addLayout(headerLayout)
+            
+            # 第2行：条件类型和循环类型
+            typeLayout = QHBoxLayout()
+            typeLayout.setContentsMargins(0, 0, 0, 0)
+            typeLayout.setSpacing(6)  # 减小间距
+            
+            typeLabel = QLabel("条件类型:")
+            typeLabel.setFixedWidth(80)  # 调整标签宽度
+            typeLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            typeLayout.addWidget(typeLabel)
+            
+            self.conditionTypeLabel = QLabel(self.module.condition_type)
+            self.conditionTypeLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            typeLayout.addWidget(self.conditionTypeLabel)
+            
+            # 循环类型选择
+            loopTypeLabel = QLabel("类型:")
+            loopTypeLabel.setFixedWidth(40)  # 调整标签宽度
+            loopTypeLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            typeLayout.addWidget(loopTypeLabel)
+            
+            self.loopTypeCombo = ComboBox()
+            self.loopTypeCombo.setObjectName("loopTypeCombo")
+            self.loopTypeCombo.addItems(["开始循环", "结束循环"])
+            self.loopTypeCombo.setCurrentText(self.module.loop_type)
+            self.loopTypeCombo.setFixedHeight(28)  # 调整高度
+            self.loopTypeCombo.setMinimumWidth(100)  # 调整最小宽度
+            # 添加循环类型变化信号连接
+            self.loopTypeCombo.currentIndexChanged.connect(self.onLoopTypeChanged)
+            typeLayout.addWidget(self.loopTypeCombo)
+            
+            typeLayout.addStretch()  # 增加拉伸因子，将元素挤到左侧
+            layout.addLayout(typeLayout)
+            
+            # 第3行：循环次数来源选择
+            self.sourceContainer = QWidget()
+            self.sourceLayout = QHBoxLayout(self.sourceContainer)
+            self.sourceLayout.setContentsMargins(0, 0, 0, 0)
+            self.sourceLayout.setSpacing(6)  # 减小间距
+            
+            sourceLabel = QLabel("循环来源:")
+            sourceLabel.setFixedWidth(80)  # 调整标签宽度
+            sourceLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            self.sourceLayout.addWidget(sourceLabel)
+            
+            # 固定次数选项
+            self.fixedRadio = QCheckBox("固定次数")
+            self.fixedRadio.setChecked(not (self.module.is_variable or self.module.is_table_field))
+            self.fixedRadio.clicked.connect(self.onSourceChanged)
+            self.sourceLayout.addWidget(self.fixedRadio)
+            
+            # 表格字段选项
+            self.tableRadio = QCheckBox("表格字段")
+            self.tableRadio.setChecked(self.module.is_table_field)
+            self.tableRadio.clicked.connect(self.onSourceChanged)
+            self.sourceLayout.addWidget(self.tableRadio)
+            
+            # 变量选项
+            self.variableRadio = QCheckBox("获取文本变量")
+            self.variableRadio.setChecked(self.module.is_variable)
+            self.variableRadio.clicked.connect(self.onSourceChanged)
+            self.sourceLayout.addWidget(self.variableRadio)
+            
+            layout.addWidget(self.sourceContainer)
+            
+            # 第4行：固定次数输入框
+            self.fixedCountContainer = QWidget()
+            fixedLayout = QHBoxLayout(self.fixedCountContainer)
+            fixedLayout.setContentsMargins(0, 0, 0, 0)
+            fixedLayout.setSpacing(6)  # 减小间距
+            
+            fixedLabel = QLabel("循环次数:")
+            fixedLabel.setFixedWidth(80)  # 调整标签宽度
+            fixedLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            fixedLayout.addWidget(fixedLabel)
+            
+            self.fixedCountEdit = LineEdit()
+            self.fixedCountEdit.setObjectName("fixedCountEdit")
+            self.fixedCountEdit.setText(self.module.loop_count)
+            self.fixedCountEdit.setPlaceholderText("循环次数")
+            self.fixedCountEdit.setFixedHeight(28)  # 调整高度
+            fixedLayout.addWidget(self.fixedCountEdit, 1)  # 增加拉伸因子
+            
+            layout.addWidget(self.fixedCountContainer)
+            
+            # 第5行：表格字段下拉框
+            self.tableFieldContainer = QWidget()
+            tableLayout = QHBoxLayout(self.tableFieldContainer)
+            tableLayout.setContentsMargins(0, 0, 0, 0)
+            tableLayout.setSpacing(6)  # 减小间距
+            
+            tableLabel = QLabel("表格字段:")
+            tableLabel.setFixedWidth(80)  # 调整标签宽度
+            tableLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            tableLayout.addWidget(tableLabel)
+            
+            self.tableFieldCombo = ComboBox()
+            self.tableFieldCombo.setObjectName("tableFieldCombo")
+            self.tableFieldCombo.setPlaceholderText("选择表格字段")
+            self.tableFieldCombo.setFixedHeight(28)  # 调整高度
+            self.tableFieldCombo.setMinimumWidth(140)  # 调整最小宽度
+            # 加载表格字段
+            self.loadTableFields()
+            # 设置当前表格字段
+            if self.module.is_table_field and self.module.table_field:
+                index = self.tableFieldCombo.findText(self.module.table_field)
+                if index != -1:
+                    self.tableFieldCombo.setCurrentIndex(index)
+            tableLayout.addWidget(self.tableFieldCombo, 1)  # 增加拉伸因子
+            
+            layout.addWidget(self.tableFieldContainer)
+            
+            # 第6行：变量下拉框
+            self.variableContainer = QWidget()
+            variableLayout = QHBoxLayout(self.variableContainer)
+            variableLayout.setContentsMargins(0, 0, 0, 0)
+            variableLayout.setSpacing(6)  # 减小间距
+            
+            variableLabel = QLabel("变量名称:")
+            variableLabel.setFixedWidth(80)  # 调整标签宽度
+            variableLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            variableLayout.addWidget(variableLabel)
+            
+            self.variableCombo = ComboBox()
+            self.variableCombo.setObjectName("variableCombo")
+            self.variableCombo.setPlaceholderText("选择获取文本变量")
+            self.variableCombo.setFixedHeight(28)  # 调整高度
+            self.variableCombo.setMinimumWidth(140)  # 调整最小宽度
+            # 加载获取文本变量
+            self.loadTextVariables()
+            # 设置当前变量
+            if self.module.is_variable and self.module.variable_name:
+                index = self.variableCombo.findText(self.module.variable_name)
+                if index != -1:
+                    self.variableCombo.setCurrentIndex(index)
+            variableLayout.addWidget(self.variableCombo, 1)  # 增加拉伸因子
+            
+            layout.addWidget(self.variableContainer)
+            
+            # 操作按钮区域 - 只保留保存按钮，移除上移下移删除按钮
+            buttonLayout = QHBoxLayout()
+            buttonLayout.setContentsMargins(0, 0, 0, 0)
+            buttonLayout.setSpacing(10)
+            buttonLayout.addStretch()  # 增加拉伸因子，将按钮挤到右侧
+            
+            # 只保留保存按钮，移除上移下移删除按钮
+            # 保存按钮已经在headerLayout中，这里不需要重复添加
+            layout.addLayout(buttonLayout)
+            
+            # 初始状态处理
+            self.onSourceChanged()
+            # 初始调用循环类型变化处理，确保状态正确
+            self.onLoopTypeChanged()
+        
+        def onSourceChanged(self):
+            """循环次数来源变化事件"""
+            # 确保只有一个选项被选中
+            if self.sender() == self.fixedRadio and self.fixedRadio.isChecked():
+                self.tableRadio.setChecked(False)
+                self.variableRadio.setChecked(False)
+            elif self.sender() == self.tableRadio and self.tableRadio.isChecked():
+                self.fixedRadio.setChecked(False)
+                self.variableRadio.setChecked(False)
+                # 重新加载表格字段
+                self.loadTableFields()
+            elif self.sender() == self.variableRadio and self.variableRadio.isChecked():
+                self.fixedRadio.setChecked(False)
+                self.tableRadio.setChecked(False)
+                # 重新加载获取文本变量
+                self.loadTextVariables()
+            
+            # 显示/隐藏相关控件
+            self.fixedCountContainer.setVisible(self.fixedRadio.isChecked())
+            self.tableFieldContainer.setVisible(self.tableRadio.isChecked())
+            self.variableContainer.setVisible(self.variableRadio.isChecked())
+        
+        def loadTableFields(self):
+            """加载表格字段到下拉框"""
+            # 清空现有选项
+            self.tableFieldCombo.clear()
+            
+            # 获取表格字段
+            # 正确获取AutomationToolInterface实例
+            parent = None
+            current_widget = self.parent()
+            # 向上查找直到找到AutomationToolInterface实例
+            while current_widget and not hasattr(current_widget, 'automation_flow'):
+                current_widget = current_widget.parent()
+            parent = current_widget
+            
+            if parent and hasattr(parent, 'automation_flow'):
+                # 获取表格字段
+                table_fields = parent.automation_flow.table_manager.get_fields()
+                if table_fields:
+                    # 先启用下拉框
+                    self.tableFieldCombo.setEnabled(True)
+                    self.tableFieldCombo.addItems(table_fields)
+                else:
+                    self.tableFieldCombo.addItem("无可用字段")
+                    self.tableFieldCombo.setEnabled(False)
+            else:
+                self.tableFieldCombo.addItem("无可用字段")
+                self.tableFieldCombo.setEnabled(False)
+        
+        def loadTextVariables(self):
+            """加载获取文本变量到下拉框"""
+            # 清空现有选项
+            self.variableCombo.clear()
+            
+            # 获取所有获取文本的模块名
+            # 正确获取AutomationToolInterface实例
+            parent = None
+            current_widget = self.parent()
+            # 向上查找直到找到AutomationToolInterface实例
+            while current_widget and not hasattr(current_widget, 'automation_flow'):
+                current_widget = current_widget.parent()
+            parent = current_widget
+            
+            if parent and hasattr(parent, 'automation_flow'):
+                # 获取所有模块
+                modules = parent.automation_flow.module_manager.get_all_modules()
+                # 获取当前条件模块的索引
+                current_index = -1
+                for i, module in enumerate(modules):
+                    if module.module_id == self.module_id:
+                        current_index = i
+                        break
+                
+                # 只添加当前条件模块之前的获取文本模块
+                text_modules = []
+                if current_index >= 0:
+                    for module in modules[:current_index]:
+                        if hasattr(module, 'action_type') and module.action_type == "获取文本":
+                            text_modules.append(module.name)
+                
+                if text_modules:
+                    # 先启用下拉框
+                    self.variableCombo.setEnabled(True)
+                    self.variableCombo.addItems(text_modules)
+                else:
+                    self.variableCombo.addItem("无可用获取文本变量")
+                    self.variableCombo.setEnabled(False)
+            else:
+                self.variableCombo.addItem("无可用获取文本变量")
+                self.variableCombo.setEnabled(False)
+        
+        def onLoopTypeChanged(self, index=None):
+            """循环类型变化事件"""
+            loop_type = self.loopTypeCombo.currentText()
+            is_end_loop = loop_type == "结束循环"
+            
+            # 当选择结束循环时，隐藏循环次数相关控件
+            # 隐藏循环次数来源选择
+            self.sourceContainer.setVisible(not is_end_loop)
+            # 隐藏固定次数输入框
+            self.fixedCountContainer.setVisible(not is_end_loop)
+            # 隐藏表格字段下拉框
+            self.tableFieldContainer.setVisible(not is_end_loop)
+            # 隐藏变量下拉框
+            self.variableContainer.setVisible(not is_end_loop)
+        
+        def saveModule(self):
+            """保存模块配置"""
+            # 更新模块属性
+            self.module.name = self.nameEdit.text() or "循环条件"
+            
+            # 保存循环类型
+            self.module.loop_type = self.loopTypeCombo.currentText()
+            
+            # 只有开始循环需要配置循环次数
+            if self.loopTypeCombo.currentText() == "开始循环":
+                if self.fixedRadio.isChecked():
+                    # 固定次数
+                    self.module.loop_count = self.fixedCountEdit.text() or "1"
+                    self.module.is_variable = False
+                    self.module.is_table_field = False
+                    self.module.variable_name = ""
+                    self.module.table_field = ""
+                elif self.tableRadio.isChecked():
+                    # 表格字段
+                    self.module.loop_count = ""
+                    self.module.is_variable = False
+                    self.module.is_table_field = True
+                    self.module.variable_name = ""
+                    self.module.table_field = self.tableFieldCombo.currentText()
+                elif self.variableRadio.isChecked():
+                    # 变量
+                    self.module.loop_count = ""
+                    self.module.is_variable = True
+                    self.module.is_table_field = False
+                    self.module.variable_name = self.variableCombo.currentText()
+                    self.module.table_field = ""
+            
+            # 发送更新信号
+            self.moduleUpdated.emit(self.module_id)
+        
+        def deleteModule(self):
+            """删除模块"""
+            self.moduleDeleted.emit(self.module_id)
     
     def setupUI(self):
         """设置界面布局"""
@@ -610,6 +979,14 @@ class AutomationToolInterface(QWidget):
         self.fieldsComboBox.setMinimumWidth(120)  # 减小最小宽度
         loadAndFieldsLayout.addWidget(self.fieldsComboBox, 1)  # 增加拉伸因子
         
+        # 清除表格按钮
+        self.clearTableBtn = ToolButton(FIF.CLOSE)  # 使用CLOSE图标
+        self.clearTableBtn.setToolTip("清除表格数据")  # 添加提示文本
+        self.clearTableBtn.setFixedHeight(26)  # 设置高度与其他按钮一致
+        self.clearTableBtn.setFixedWidth(26)  # 设置宽度与高度一致，形成圆形按钮效果
+        self.clearTableBtn.clicked.connect(self.clearTable)
+        loadAndFieldsLayout.addWidget(self.clearTableBtn)
+        
         tableLayout.addLayout(loadAndFieldsLayout)
         
         layout.addWidget(tableGroup)
@@ -686,7 +1063,7 @@ class AutomationToolInterface(QWidget):
         return panel
     
     def createModuleListPanel(self):
-        """创建中间模块列表面板 - 以列表形式显示模块名"""
+        """创建中间模块列表面板 - 以表格形式显示模块列表和循环条件"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -703,15 +1080,36 @@ class AutomationToolInterface(QWidget):
         
         layout.addLayout(moduleListHeaderLayout)
         
-        # 模块列表 - 使用QListWidget显示模块名
-        self.moduleListWidget = QListWidget()
-        self.moduleListWidget.setObjectName("moduleListWidget")
-        self.moduleListWidget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.moduleListWidget.itemClicked.connect(self.onModuleListItemClicked)
+        # 模块列表 - 使用QTableWidget显示模块列表和循环条件
+        self.moduleTableWidget = QTableWidget()
+        self.moduleTableWidget.setObjectName("moduleTableWidget")
+        self.moduleTableWidget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.moduleTableWidget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.moduleTableWidget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)  # 禁用直接编辑，使用控件编辑
+        self.moduleTableWidget.itemClicked.connect(self.onModuleTableItemClicked)
         
-        layout.addWidget(self.moduleListWidget)
+        # 设置列
+        self.moduleTableWidget.setColumnCount(3)
+        self.moduleTableWidget.setHorizontalHeaderLabels(["序号", "模块名", "操作类型"])
         
-        # 模块控制按钮 - 添加模块、上移、下移、删除
+        # 设置宽度自适应
+        self.moduleTableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # 但为序号列设置固定宽度
+        self.moduleTableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.moduleTableWidget.setColumnWidth(0, 50)
+        
+        # 启用水平滚动条
+        self.moduleTableWidget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # 初始设置表格样式，具体颜色将在updateTheme中根据主题调整
+        self.updateTableTheme()
+        
+        # 隐藏垂直表头
+        self.moduleTableWidget.verticalHeader().setVisible(False)
+        
+        layout.addWidget(self.moduleTableWidget)
+        
+        # 模块控制按钮 - 添加模块、添加条件、上移、下移、删除
         moduleControlLayout = QHBoxLayout()
         moduleControlLayout.setContentsMargins(0, 0, 0, 0)
         moduleControlLayout.setSpacing(10)
@@ -719,6 +1117,10 @@ class AutomationToolInterface(QWidget):
         self.addModuleBtn = PrimaryPushButton(FIF.ADD, "添加模块")
         self.addModuleBtn.clicked.connect(self.addModule)
         moduleControlLayout.addWidget(self.addModuleBtn)
+        
+        self.addConditionBtn = PrimaryPushButton(FIF.CODE, "添加条件")
+        self.addConditionBtn.clicked.connect(self.addCondition)
+        moduleControlLayout.addWidget(self.addConditionBtn)
         
         self.moveUpBtn = PushButton(FIF.UP, "上移")
         self.moveUpBtn.clicked.connect(self.onMoveUpBtnClicked)
@@ -764,19 +1166,28 @@ class AutomationToolInterface(QWidget):
         
         return panel
     
-    def onModuleListItemClicked(self, item):
+    def onModuleTableItemClicked(self, item):
         """模块列表项点击事件 - 显示选中模块的配置"""
-        module_id = item.data(Qt.ItemDataRole.UserRole)
-        if module_id and module_id in self.module_cards:
-            # 清空当前配置内容
-            self.clearConfigPanel()
-            
-            # 添加选中模块的配置卡片
-            card = self.module_cards[module_id]
-            self.configContentLayout.addWidget(card)
-            
-            # 特别处理表格模块，确保配置页面正确更新
-            card.onActionTypeChanged(card.actionTypeCombo.currentIndex())
+        row = item.row()
+        module_id_item = self.moduleTableWidget.item(row, 1)  # 模块ID存储在第二列的UserData中
+        if module_id_item:
+            module_id = module_id_item.data(Qt.ItemDataRole.UserRole)
+            if module_id and module_id in self.module_cards:
+                # 更新当前模块ID
+                self.current_module_id = module_id
+                
+                # 清空当前配置内容
+                self.clearConfigPanel()
+                
+                # 添加选中模块的配置卡片
+                card = self.module_cards[module_id]
+                self.configContentLayout.addWidget(card)
+                
+                # 特别处理普通模块，确保配置页面正确更新
+                if hasattr(card, 'onActionTypeChanged'):
+                    card.onActionTypeChanged(card.actionTypeCombo.currentIndex())
+    
+
     
     def clearConfigPanel(self):
         """清空配置面板内容"""
@@ -791,40 +1202,100 @@ class AutomationToolInterface(QWidget):
     
     def onMoveUpBtnClicked(self):
         """上移按钮点击事件"""
-        current_item = self.moduleListWidget.currentItem()
-        if current_item:
-            module_id = current_item.data(Qt.ItemDataRole.UserRole)
-            self.onModuleMoved(module_id, True)
+        current_row = self.moduleTableWidget.currentRow()
+        if current_row > 0:
+            # 获取当前行的模块ID
+            module_id_item = self.moduleTableWidget.item(current_row, 1)
+            if module_id_item:
+                module_id = module_id_item.data(Qt.ItemDataRole.UserRole)
+                self.onModuleMoved(module_id, True)
     
     def onMoveDownBtnClicked(self):
         """下移按钮点击事件"""
-        current_item = self.moduleListWidget.currentItem()
-        if current_item:
-            module_id = current_item.data(Qt.ItemDataRole.UserRole)
-            self.onModuleMoved(module_id, False)
+        current_row = self.moduleTableWidget.currentRow()
+        if current_row < self.moduleTableWidget.rowCount() - 1:
+            # 获取当前行的模块ID
+            module_id_item = self.moduleTableWidget.item(current_row, 1)
+            if module_id_item:
+                module_id = module_id_item.data(Qt.ItemDataRole.UserRole)
+                self.onModuleMoved(module_id, False)
     
     def onDeleteModuleBtnClicked(self):
         """删除按钮点击事件"""
-        current_item = self.moduleListWidget.currentItem()
-        if current_item:
-            module_id = current_item.data(Qt.ItemDataRole.UserRole)
-            self.onModuleDeleted(module_id)
+        current_row = self.moduleTableWidget.currentRow()
+        if current_row >= 0:
+            # 获取当前行的模块ID
+            module_id_item = self.moduleTableWidget.item(current_row, 1)
+            if module_id_item:
+                module_id = module_id_item.data(Qt.ItemDataRole.UserRole)
+                self.onModuleDeleted(module_id)
         
     def updateModuleList(self):
         """更新模块列表"""
-        # 清空列表
-        self.moduleListWidget.clear()
+        # 保存当前选中的模块ID
+        selected_module_id = None
+        current_row = self.moduleTableWidget.currentRow()
+        if current_row >= 0:
+            name_item = self.moduleTableWidget.item(current_row, 1)
+            if name_item:
+                selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
+        
+        # 清空表格
+        self.moduleTableWidget.setRowCount(0)
         
         # 从模块管理器获取最新的模块列表（带正确顺序）
         modules = self.automation_flow.module_manager.get_all_modules()
         
-        # 添加所有模块
-        for module in modules:
+        # 添加所有模块到表格
+        for idx, module in enumerate(modules):
             if module.module_id in self.module_cards:
                 card = self.module_cards[module.module_id]
-                item = QListWidgetItem(card.nameEdit.text())
-                item.setData(Qt.ItemDataRole.UserRole, module.module_id)
-                self.moduleListWidget.addItem(item)
+                
+                # 创建新行
+                self.moduleTableWidget.insertRow(idx)
+                
+                # 设置序号
+                index_item = QTableWidgetItem(str(idx + 1))
+                
+                # 设置模块名
+                name_item = QTableWidgetItem(card.nameEdit.text())
+                name_item.setData(Qt.ItemDataRole.UserRole, module.module_id)
+                
+                # 设置类型
+                type_item = QTableWidgetItem("条件模块" if hasattr(module, 'condition_type') else module.action_type)
+                
+                # 检查是否为条件模块，设置不同的颜色
+                is_dark = isDarkTheme()
+                if hasattr(module, 'condition_type'):
+                    # 条件模块，设置不同的背景颜色
+                    if is_dark:
+                        # 深色主题下的条件模块样式
+                        for item in [index_item, name_item, type_item]:
+                            item.setBackground(Qt.GlobalColor.darkGreen)
+                            item.setForeground(Qt.GlobalColor.white)
+                    else:
+                        # 浅色主题下的条件模块样式
+                        for item in [index_item, name_item, type_item]:
+                            item.setBackground(Qt.GlobalColor.lightGreen)
+                            item.setForeground(Qt.GlobalColor.darkGreen)
+                
+                # 添加到表格
+                self.moduleTableWidget.setItem(idx, 0, index_item)
+                self.moduleTableWidget.setItem(idx, 1, name_item)
+                self.moduleTableWidget.setItem(idx, 2, type_item)
+        
+        # 确定要选中的模块ID：优先使用current_module_id（新创建的模块），其次使用之前选中的模块ID
+        target_module_id = self.current_module_id if self.current_module_id else selected_module_id
+        
+        # 恢复选中状态
+        if target_module_id:
+            # 遍历表格查找对应的模块ID并选中
+            for row in range(self.moduleTableWidget.rowCount()):
+                name_item = self.moduleTableWidget.item(row, 1)
+                if name_item and name_item.data(Qt.ItemDataRole.UserRole) == target_module_id:
+                    self.moduleTableWidget.setCurrentCell(row, 0)
+                    self.moduleTableWidget.selectRow(row)
+                    break
     
     def updateTheme(self):
         """更新主题 - 更专业的样式设计"""
@@ -884,10 +1355,10 @@ class AutomationToolInterface(QWidget):
                 QComboBox:focus,
                 QDoubleSpinBox:focus,
                 QTextEdit:focus {
-                    border: 1px solid #0078d4;
+                    border: 1px solid #4CAF50;
                     background-color: #3a3a3a;
                     outline: none;
-                    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+                    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
                 }
                 
                 /* 组合框下拉样式 */
@@ -906,7 +1377,7 @@ class AutomationToolInterface(QWidget):
                     color: #e0e0e0;
                     border: 1px solid #404040;
                     border-radius: 6px;
-                    selection-background-color: #0078d4;
+                    selection-background-color: #4CAF50;
                 }
                 
                 /* 双精度输入框按钮 */
@@ -966,7 +1437,7 @@ class AutomationToolInterface(QWidget):
                     color: #e0e0e0;
                     border: 1px solid #404040;
                     border-radius: 8px;
-                    selection-background-color: #0078d4;
+                    selection-background-color: #4CAF50;
                     selection-color: #ffffff;
                     show-decoration-selected: 1;
                 }
@@ -981,7 +1452,7 @@ class AutomationToolInterface(QWidget):
                     background-color: #3a3a3a;
                 }
                 QListWidget::item:selected {
-                    background-color: #0078d4;
+                    background-color: #4CAF50;
                 }
                 
                 /* 标签样式 */
@@ -1062,9 +1533,9 @@ class AutomationToolInterface(QWidget):
                 QComboBox:focus,
                 QDoubleSpinBox:focus,
                 QTextEdit:focus {
-                    border: 1px solid #0078d4;
+                    border: 1px solid #4CAF50;
                     outline: none;
-                    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+                    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
                 }
                 
                 /* 组合框下拉样式 */
@@ -1083,7 +1554,7 @@ class AutomationToolInterface(QWidget):
                     color: #333333;
                     border: 1px solid #e0e0e0;
                     border-radius: 6px;
-                    selection-background-color: #0078d4;
+                    selection-background-color: #4CAF50;
                     selection-color: #ffffff;
                 }
                 
@@ -1144,7 +1615,7 @@ class AutomationToolInterface(QWidget):
                     color: #333333;
                     border: 1px solid #e0e0e0;
                     border-radius: 8px;
-                    selection-background-color: #0078d4;
+                    selection-background-color: #4CAF50;
                     selection-color: #ffffff;
                     show-decoration-selected: 1;
                 }
@@ -1159,7 +1630,7 @@ class AutomationToolInterface(QWidget):
                     background-color: #f5f5f5;
                 }
                 QListWidget::item:selected {
-                    background-color: #0078d4;
+                    background-color: #4CAF50;
                 }
                 
                 /* 标签样式 */
@@ -1192,16 +1663,250 @@ class AutomationToolInterface(QWidget):
         self.descLabel.setStyleSheet(f"color: {'#a0a0a0' if is_dark else '#666666'}; font-size: 13px;")
         
         # 更新列表控件样式
-        if hasattr(self, 'moduleListWidget') and self.moduleListWidget:
-            # 列表控件样式已在全局样式表中定义，这里不再重复设置
-            pass
+        if hasattr(self, 'moduleTableWidget') and self.moduleTableWidget:
+            self.updateTableTheme()
+    
+    def updateTableTheme(self):
+        """根据当前主题更新表格样式"""
+        is_dark = isDarkTheme()
+        
+        # 获取系统主题的强调色，与PrimaryPushButton保持一致
+        from qfluentwidgets import themeColor
+        # 获取当前主题的强调色，themeColor()会根据当前主题自动返回正确的颜色
+        accent_color = themeColor().name()  # 获取颜色的十六进制表示
+        
+        if is_dark:
+            # 深色主题表格样式
+            table_style = f"""
+                QTableWidget {{
+                    border: 1px solid #404040;
+                    border-radius: 4px;
+                    background-color: #333333;
+                    gridline-color: #404040;
+                }}
+                QTableWidget::item {{
+                    padding: 8px;
+                    border-bottom: 1px solid #404040;
+                    color: #e0e0e0;
+                }}
+                QTableWidget::item:selected {{
+                    background-color: {accent_color};
+                    color: #000000;
+                }}
+                QTableWidget::header {{
+                    background-color: #2a2a2a;
+                    border: none;
+                    border-bottom: 2px solid #404040;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #e0e0e0;
+                    padding: 10px;
+                }}
+                QTableWidget::horizontalHeader {{
+                    background-color: #2a2a2a;
+                    border: none;
+                    border-bottom: 2px solid #404040;
+                }}
+                QTableWidget::horizontalHeader::section {{
+                    background-color: #2a2a2a;
+                    border: none;
+                    border-bottom: 2px solid #404040;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #e0e0e0;
+                    padding: 6px;
+                    min-height: 20px;
+                }}
+                QTableWidget::verticalHeader {{
+                    background-color: #2a2a2a;
+                    border: none;
+                    border-right: 1px solid #404040;
+                    color: #e0e0e0;
+                }}
+                QTableWidget QComboBox {{
+                    background-color: #333333;
+                    color: #e0e0e0;
+                    border: 1px solid #404040;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    margin: 0;
+                }}
+                QTableWidget QComboBox::drop-down {{
+                    background-color: #333333;
+                    border: none;
+                    border-top-right-radius: 4px;
+                    border-bottom-right-radius: 4px;
+                }}
+                QTableWidget QComboBox::down-arrow {{
+                    color: #e0e0e0;
+                    padding: 2px;
+                }}
+                QTableWidget QComboBox QAbstractItemView {{
+                    background-color: #333333;
+                    color: #e0e0e0;
+                    border: 1px solid #404040;
+                    border-radius: 4px;
+                    selection-background-color: {accent_color};
+                }}
+                QTableWidget QDoubleSpinBox {{
+                    background-color: #333333;
+                    color: #e0e0e0;
+                    border: 1px solid #404040;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    margin: 0;
+                }}
+                QTableWidget QDoubleSpinBox::up-button,
+                QTableWidget QDoubleSpinBox::down-button {{
+                    background-color: #444444;
+                    color: #e0e0e0;
+                    border: none;
+                    border-radius: 0;
+                }}
+                QTableWidget QDoubleSpinBox::up-button {{
+                    border-top-right-radius: 4px;
+                }}
+                QTableWidget QDoubleSpinBox::down-button {{
+                    border-bottom-right-radius: 4px;
+                }}
+            """
+        else:
+            # 浅色主题表格样式
+            table_style = f"""
+                QTableWidget {{
+                    border: 1px solid #E0E0E0;
+                    border-radius: 4px;
+                    background-color: #FFFFFF;
+                    gridline-color: #E0E0E0;
+                }}
+                QTableWidget::item {{
+                    padding: 8px;
+                    border-bottom: 1px solid #F0F0F0;
+                    color: #333333;
+                }}
+                QTableWidget::item:selected {{
+                    background-color: {accent_color};
+                    color: #000000;
+                }}
+                QTableWidget::header {{
+                    background-color: #F5F5F5;
+                    border: none;
+                    border-bottom: 2px solid #E0E0E0;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #333333;
+                    padding: 10px;
+                }}
+                QTableWidget::horizontalHeader {{
+                    background-color: #F5F5F5;
+                    border: none;
+                    border-bottom: 2px solid #E0E0E0;
+                }}
+                QTableWidget::horizontalHeader::section {{
+                    background-color: #F5F5F5;
+                    border: none;
+                    border-bottom: 2px solid #E0E0E0;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #333333;
+                    padding: 6px;
+                    min-height: 20px;
+                }}
+                QTableWidget::verticalHeader {{
+                    background-color: #F5F5F5;
+                    border: none;
+                    border-right: 1px solid #E0E0E0;
+                    color: #333333;
+                }}
+                QTableWidget QComboBox {{
+                    background-color: #ffffff;
+                    color: #333333;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    margin: 0;
+                }}
+                QTableWidget QComboBox::drop-down {{
+                    background-color: #ffffff;
+                    border: none;
+                    border-top-right-radius: 4px;
+                    border-bottom-right-radius: 4px;
+                }}
+                QTableWidget QComboBox::down-arrow {{
+                    color: #666666;
+                    padding: 2px;
+                }}
+                QTableWidget QComboBox QAbstractItemView {{
+                    background-color: #ffffff;
+                    color: #333333;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 4px;
+                    selection-background-color: {accent_color};
+                }}
+                QTableWidget QDoubleSpinBox {{
+                    background-color: #ffffff;
+                    color: #333333;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    margin: 0;
+                }}
+                QTableWidget QDoubleSpinBox::up-button,
+                QTableWidget QDoubleSpinBox::down-button {{
+                    background-color: #f0f0f0;
+                    color: #333333;
+                    border: none;
+                    border-radius: 0;
+                }}
+                QTableWidget QDoubleSpinBox::up-button {{
+                    border-top-right-radius: 4px;
+                }}
+                QTableWidget QDoubleSpinBox::down-button {{
+                    border-bottom-right-radius: 4px;
+                }}
+            """
+        
+        # 应用表格样式
+        self.moduleTableWidget.setStyleSheet(table_style)
+        
+        # 额外设置表头样式，确保被正确应用
+        header = self.moduleTableWidget.horizontalHeader()
+        if is_dark:
+            header.setStyleSheet("""
+                QHeaderView::section {
+                    background-color: #2a2a2a;
+                    border: none;
+                    border-bottom: 2px solid #404040;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #e0e0e0;
+                    padding: 6px;
+                    min-height: 20px;
+                }
+            """)
+        else:
+            header.setStyleSheet("""
+                QHeaderView::section {
+                    background-color: #F5F5F5;
+                    border: none;
+                    border-bottom: 2px solid #E0E0E0;
+                    font-weight: bold;
+                    font-size: 13px;
+                    color: #333333;
+                    padding: 6px;
+                    min-height: 20px;
+                }
+            """)
     
     def connectBrowser(self):
         """连接浏览器"""
         if self.automation_flow.connect_browser():
             self.connectBrowserBtn.setEnabled(False)
             self.disconnectBrowserBtn.setEnabled(True)
-            self.browserStatusLabel.setText("浏览器: 已连接")
+            # 更新浏览器状态，包含网页标题
+            self.updateBrowserStatus()
+            # 启动定时器，定期更新网页标题
+            self.title_update_timer.start()
             InfoBar.success(
                 title="成功",
                 content="浏览器连接成功",
@@ -1228,6 +1933,8 @@ class AutomationToolInterface(QWidget):
         self.connectBrowserBtn.setEnabled(True)
         self.disconnectBrowserBtn.setEnabled(False)
         self.browserStatusLabel.setText("浏览器: 未连接")
+        # 停止定时器
+        self.title_update_timer.stop()
         InfoBar.success(
             title="成功",
             content="浏览器已断开连接",
@@ -1237,6 +1944,18 @@ class AutomationToolInterface(QWidget):
             duration=2000,
             parent=self
         )
+    
+    def updateBrowserStatus(self):
+        """更新浏览器状态，包含当前网页标题"""
+        if self.automation_flow.browser.is_connected:
+            # 获取当前网页标题
+            page_title = self.automation_flow.browser.get_page_title()
+            if page_title:
+                self.browserStatusLabel.setText(f"浏览器: 已连接 - {page_title}")
+            else:
+                self.browserStatusLabel.setText("浏览器: 已连接")
+        else:
+            self.browserStatusLabel.setText("浏览器: 未连接")
     
     def loadTable(self):
         """加载表格文件"""
@@ -1258,30 +1977,65 @@ class AutomationToolInterface(QWidget):
                 self.tableStatusLabel.setText(f"表格数据: 已加载 {self.automation_flow.table_manager.get_total_records()} 条记录")
                 
                 # 表格字段加载成功，可用于模块配置中的变量引用
-                
                 InfoBar.success(
                     title="成功",
                     content=f"表格加载成功，共 {len(fields)} 个字段，{len(self.automation_flow.table_manager.data)} 条记录",
                     orient=Qt.Orientation.Horizontal,
                     isClosable=True,
-                    position=InfoBarPosition.TOP_RIGHT,
-                    duration=2000,
-                    parent=self
-                )
-            else:
-                InfoBar.error(
-                    title="错误",
-                    content="表格加载失败",
-                    orient=Qt.Orientation.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP_RIGHT,
+                    position=InfoBarPosition.TOP,
                     duration=3000,
                     parent=self
                 )
     
+    def clearTable(self):
+        """清除表格数据"""
+        self.automation_flow.clear_table()
+        
+        # 更新界面状态
+        self.fieldsComboBox.clear()
+        self.fieldsComboBox.setPlaceholderText("选择字段")
+        self.tableStatusLabel.setText("表格数据: 未加载")
+        
+        InfoBar.success(
+            title="成功",
+            content="表格数据已清除",
+            orient=Qt.Orientation.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3000,
+            parent=self
+        )
+    
     def addModule(self):
         """添加元素模块"""
-        module = self.automation_flow.module_manager.add_module("新模块")
+        # 获取当前选中的行
+        current_row = self.moduleTableWidget.currentRow()
+        
+        # 计算要添加的位置
+        if current_row >= 0:
+            # 如果有选中行，获取选中模块ID
+            name_item = self.moduleTableWidget.item(current_row, 1)
+            if name_item:
+                selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
+                if selected_module_id:
+                    # 获取所有模块
+                    modules = self.automation_flow.module_manager.get_all_modules()
+                    # 查找选中模块的索引
+                    for i, module in enumerate(modules):
+                        if module.module_id == selected_module_id:
+                            # 在选中模块的下方添加新模块
+                            module = self.automation_flow.module_manager.add_module("新模块", i + 1)
+                            break
+                    else:
+                        # 如果找不到选中模块，添加到末尾
+                        module = self.automation_flow.module_manager.add_module("新模块")
+                else:
+                    module = self.automation_flow.module_manager.add_module("新模块")
+            else:
+                module = self.automation_flow.module_manager.add_module("新模块")
+        else:
+            # 如果没有选中行，添加到末尾
+            module = self.automation_flow.module_manager.add_module("新模块")
         
         # 创建模块卡片
         card = self.ModuleCard(module)
@@ -1294,11 +2048,80 @@ class AutomationToolInterface(QWidget):
         # 存储映射关系
         self.module_cards[module.module_id] = card
         
+        # 更新当前模块ID
+        self.current_module_id = module.module_id
+        
         # 更新模块列表
         self.updateModuleList()
         
+        # 显示新模块的配置面板
+        if self.current_module_id in self.module_cards:
+            # 清空当前配置内容
+            self.clearConfigPanel()
+            
+            # 添加新模块的配置卡片
+            card = self.module_cards[self.current_module_id]
+            self.configContentLayout.addWidget(card)
+            
+            # 特别处理表格模块，确保配置页面正确更新
+            card.onActionTypeChanged(card.actionTypeCombo.currentIndex())
+    
+    def addCondition(self):
+        """添加条件模块"""
+        # 获取当前选中的行
+        current_row = self.moduleTableWidget.currentRow()
+        
+        # 计算要添加的位置
+        if current_row >= 0:
+            # 如果有选中行，获取选中模块ID
+            name_item = self.moduleTableWidget.item(current_row, 1)
+            if name_item:
+                selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
+                if selected_module_id:
+                    # 获取所有模块
+                    modules = self.automation_flow.module_manager.get_all_modules()
+                    # 查找选中模块的索引
+                    for i, module in enumerate(modules):
+                        if module.module_id == selected_module_id:
+                            # 在选中模块的下方添加新条件模块
+                            module = self.automation_flow.module_manager.add_condition_module("循环条件", i + 1)
+                            break
+                    else:
+                        # 如果找不到选中模块，添加到末尾
+                        module = self.automation_flow.module_manager.add_condition_module("循环条件")
+                else:
+                    module = self.automation_flow.module_manager.add_condition_module("循环条件")
+            else:
+                module = self.automation_flow.module_manager.add_condition_module("循环条件")
+        else:
+            # 如果没有选中行，添加到末尾
+            module = self.automation_flow.module_manager.add_condition_module("循环条件")
+        
+        # 创建模块卡片
+        card = self.ConditionCard(module)
+        
+        # 连接信号
+        card.moduleUpdated.connect(self.onModuleUpdated)
+        card.moduleDeleted.connect(self.onModuleDeleted)
+        card.moduleMoved.connect(self.onModuleMoved)
+        
+        # 存储映射关系
+        self.module_cards[module.module_id] = card
+        
         # 更新当前模块ID
         self.current_module_id = module.module_id
+        
+        # 更新模块列表
+        self.updateModuleList()
+        
+        # 显示新模块的配置面板
+        if self.current_module_id in self.module_cards:
+            # 清空当前配置内容
+            self.clearConfigPanel()
+            
+            # 添加新模块的配置卡片
+            card = self.module_cards[self.current_module_id]
+            self.configContentLayout.addWidget(card)
     
     def onModuleUpdated(self, module_id: str):
         """模块更新事件"""
@@ -1439,8 +2262,13 @@ class AutomationToolInterface(QWidget):
                 
                 # 重新加载模块卡片
                 for module in self.automation_flow.module_manager.get_all_modules():
-                    # 创建模块卡片
-                    card = self.ModuleCard(module)
+                    # 根据模块类型创建不同的卡片
+                    if hasattr(module, 'condition_type'):
+                        # 条件模块
+                        card = self.ConditionCard(module)
+                    else:
+                        # 普通模块
+                        card = self.ModuleCard(module)
                     
                     # 连接信号
                     card.moduleUpdated.connect(self.onModuleUpdated)

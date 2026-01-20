@@ -80,25 +80,19 @@ def 影像裁剪(
         total_tasks = len(image_files) * len(unique_values)
         completed_tasks = 0
         
-        # 遍历所有影像文件
-        for image_file in image_files:
-            print(f"\n处理影像: {image_file}")
+        # 遍历所有裁剪范围（外层循环）
+        for value in unique_values:
+            print(f"\n处理裁剪范围: {字段名} = {value}")
             
-            # 读取影像元数据
-            with rasterio.open(image_file) as src:
-                src_crs = src.crs
-                src_transform = src.transform
-                src_meta = src.meta.copy()
-                print(f"影像坐标系: {src_crs}")
-                print(f"影像分辨率: {src_transform.a}, {src_transform.e}")
+            # 筛选当前裁剪范围的矢量数据
+            mask_gdf = gdf[gdf[字段名] == value]
+            if mask_gdf.empty:
+                if 警告回调:
+                    警告回调(f"未找到字段值为 {value} 的矢量要素")
+                continue
             
-            # 确保矢量与影像坐标系一致
-            if gdf.crs != src_crs:
-                print(f"转换矢量坐标系从 {gdf.crs} 到 {src_crs}")
-                gdf = gdf.to_crs(src_crs)
-            
-            # 遍历所有裁剪范围
-            for value in unique_values:
+            # 遍历所有影像文件（内层循环）
+            for image_file in image_files:
                 completed_tasks += 1
                 
                 # 更新进度
@@ -106,47 +100,109 @@ def 影像裁剪(
                     progress = int((completed_tasks / total_tasks) * 100)
                     进度回调(progress)
                 
-                print(f"\n裁剪范围: {字段名} = {value}")
+                print(f"\n处理影像: {image_file}")
                 
-                # 筛选当前裁剪范围的矢量数据
-                mask_gdf = gdf[gdf[字段名] == value]
-                if mask_gdf.empty:
-                    if 警告回调:
-                        警告回调(f"未找到字段值为 {value} 的矢量要素")
-                    continue
+                # 读取影像元数据
+                with rasterio.open(image_file) as src:
+                    src_crs = src.crs
+                    src_transform = src.transform
+                    print(f"影像坐标系: {src_crs}")
+                    print(f"影像分辨率: {src_transform.a}, {src_transform.e}")
+                
+                # 检查矢量与影像坐标系是否一致
+                gdf_epsg = None
+                src_epsg = None
+                
+                try:
+                    if gdf.crs:
+                        gdf_epsg = gdf.crs.to_epsg()
+                except Exception:
+                    pass
+                
+                try:
+                    if src_crs:
+                        src_epsg = src_crs.to_epsg()
+                except Exception:
+                    pass
+                
+                # 为当前影像创建临时的矢量数据副本，避免多次修改原数据
+                current_mask_gdf = mask_gdf.copy()
+                
+                # 如果EPSG代码相同，或者坐标系统字符串相同，则认为坐标系一致
+                if gdf.crs == src_crs or (gdf_epsg and src_epsg and gdf_epsg == src_epsg):
+                    print(f"坐标系一致，继续执行裁剪")
+                else:
+                    # 坐标系统不一致时，自动进行转换
+                    print(f"转换矢量坐标系从 {gdf.crs} 到 {src_crs}")
+                    current_mask_gdf = current_mask_gdf.to_crs(src_crs)
                 
                 # 应用缓冲
                 if 缓冲距离 and 缓冲距离 > 0:
                     print(f"应用缓冲距离: {缓冲距离}")
-                    mask_gdf['geometry'] = mask_gdf.geometry.buffer(缓冲距离)
+                    current_mask_gdf['geometry'] = current_mask_gdf.geometry.buffer(缓冲距离)
                 
                 # 裁剪影像
-                with rasterio.open(image_file) as src:
-                    # 获取几何列表
-                    geometries = mask_gdf.geometry.tolist()
-                    
-                    # 裁剪影像
-                    out_image, out_transform = mask(src, geometries, crop=True)
-                    
-                    # 更新元数据
-                    out_meta = src.meta.copy()
-                    out_meta.update({
-                        'driver': 'GTiff',
-                        'height': out_image.shape[1],
-                        'width': out_image.shape[2],
-                        'transform': out_transform
-                    })
-                    
-                    # 生成输出文件名
-                    base_name = os.path.splitext(os.path.basename(image_file))[0]
-                    output_file = os.path.join(输出目录, f"{base_name}_{字段名}_{value}.tif")
-                    
-                    # 保存裁剪结果
-                    with rasterio.open(output_file, 'w', **out_meta) as dst:
-                        dst.write(out_image)
-                    
-                    print(f"裁剪完成，输出文件: {output_file}")
-                    output_files.append(output_file)
+                try:
+                    with rasterio.open(image_file) as src:
+                        # 获取几何列表
+                        geometries = current_mask_gdf.geometry.tolist()
+                        
+                        # 裁剪影像
+                        out_image, out_transform = mask(src, geometries, crop=True)
+                        
+                        # 检查裁剪结果是否为空
+                        if out_image.shape[1] == 0 or out_image.shape[2] == 0:
+                            print(f"跳过裁剪: {image_file}，原因：矢量与影像不重叠")
+                            if 警告回调:
+                                警告回调(f"跳过裁剪: {os.path.basename(image_file)}，原因：矢量与影像不重叠")
+                            continue
+                        
+                        # 检查裁剪区域内是否所有像素都是0值
+                        # 对每个波段计算非零像素数量
+                        non_zero_count = 0
+                        for band in range(out_image.shape[0]):
+                            non_zero_count += np.count_nonzero(out_image[band])
+                        
+                        # 如果所有波段的所有像素都是0值，跳过裁剪
+                        if non_zero_count == 0:
+                            print(f"跳过裁剪: {image_file}，原因：裁剪区域内所有像素都是0值")
+                            if 警告回调:
+                                警告回调(f"跳过裁剪: {os.path.basename(image_file)}，原因：裁剪区域内所有像素都是0值")
+                            continue
+                        
+                        # 更新元数据
+                        out_meta = src.meta.copy()
+                        out_meta.update({
+                            'driver': 'GTiff',
+                            'height': out_image.shape[1],
+                            'width': out_image.shape[2],
+                            'transform': out_transform
+                        })
+                        
+                        # 根据字段值创建文件夹
+                        field_folder = os.path.join(输出目录, f"{字段名}_{value}")
+                        if not os.path.exists(field_folder):
+                            os.makedirs(field_folder)
+                        
+                        # 生成输出文件名
+                        base_name = os.path.splitext(os.path.basename(image_file))[0]
+                        output_file = os.path.join(field_folder, f"{base_name}.tif")
+                        
+                        # 保存裁剪结果
+                        with rasterio.open(output_file, 'w', **out_meta) as dst:
+                            dst.write(out_image)
+                        
+                        print(f"裁剪完成，输出文件: {output_file}")
+                        output_files.append(output_file)
+                except Exception as e:
+                    if "Input shapes do not overlap raster" in str(e) or "Intersection is empty" in str(e):
+                        print(f"跳过裁剪: {image_file}，原因：矢量与影像不重叠")
+                        if 警告回调:
+                            警告回调(f"跳过裁剪: {os.path.basename(image_file)}，原因：矢量与影像不重叠")
+                    else:
+                        print(f"裁剪失败: {image_file}，原因：{str(e)}")
+                        if 警告回调:
+                            警告回调(f"裁剪失败: {os.path.basename(image_file)}，原因：{str(e)}")
         
         print(f"\n影像裁剪完成！")
         print(f"共生成 {len(output_files)} 个文件")
@@ -159,7 +215,7 @@ def 影像裁剪(
         raise Exception(f"影像裁剪失败: {str(e)}")
 
 
-def 影像拼接(file_list_text, progress_callback=None, out_format='tif', out_res=None, output_name='mosaic_result'):
+def 影像拼接(file_list_text, progress_callback=None, out_format='tif', out_res=None, output_name='mosaic_result', output_path=None):
     """
     影像拼接功能
     
@@ -169,6 +225,7 @@ def 影像拼接(file_list_text, progress_callback=None, out_format='tif', out_r
     out_format: 输出格式，支持tif和img
     out_res: 输出分辨率，None表示使用默认分辨率
     output_name: 输出影像名称，默认为'mosaic_result'
+    output_path: 输出文件路径，None表示自动生成
     
     返回:
     输出文件路径
@@ -193,10 +250,26 @@ def 影像拼接(file_list_text, progress_callback=None, out_format='tif', out_r
         
         # 读取所有影像文件
         src_files_to_mosaic = []
+        reference_crs = None
+        
         for file in file_list:
             src = rasterio.open(file)
             src_files_to_mosaic.append(src)
             print(f"添加影像: {file}")
+            print(f"  影像坐标系: {src.crs}")
+            
+            # 检查坐标系是否一致
+            if reference_crs is None:
+                reference_crs = src.crs
+            else:
+                if src.crs != reference_crs:
+                    # 关闭已打开的文件
+                    for s in src_files_to_mosaic:
+                        s.close()
+                    raise Exception(f"影像坐标系不一致！\n" \
+                                  f"文件 {file_list[0]} 的坐标系: {reference_crs}\n" \
+                                  f"文件 {file} 的坐标系: {src.crs}\n" \
+                                  f"请确保所有影像使用相同的坐标系。")
         
         # 更新进度
         if progress_callback:
@@ -223,8 +296,12 @@ def 影像拼接(file_list_text, progress_callback=None, out_format='tif', out_r
         })
         
         # 生成输出文件名
-        first_file_dir = os.path.dirname(file_list[0])
-        output_file = os.path.join(first_file_dir, f"{output_name}.{out_format}")
+        if output_path is None:
+            first_file_dir = os.path.dirname(file_list[0])
+            output_file = os.path.join(first_file_dir, f"{output_name}.{out_format}")
+        else:
+            # 使用指定的输出路径
+            output_file = output_path
         
         # 保存合并结果
         print(f"保存拼接结果到: {output_file}")

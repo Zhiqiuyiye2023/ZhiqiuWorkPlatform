@@ -653,10 +653,10 @@ class HomeInterface(ScrollArea):
         actions = [
             ('data_overlay', FIF.TILES, '数据叠加', '计算矢量套合占比'),
             ('field_split', FIF.CUT, '字段分离', '按字段分离要素'),
-            ('dxf_convert', FIF.DOCUMENT, 'DXF转换', '提取DXF图层'),
+            ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并、分离、转换'),
             ('shp_to_kmz', FIF.FOLDER, 'SHP转KMZ', '转换为奥维格式'),
             ('image_mosaic', FIF.PHOTO, '影像拼接', '多影像拼接处理'),
-            ('center_point', FIF.PIN, '获取中心点', '获取要素中心坐标'),
+            ('batch_copy_move', FIF.COPY, '按列表批量操作', '批量按表格操作文件与文件夹'),
         ]
         
         for app_id, icon, title, desc in actions:

@@ -235,14 +235,26 @@ class EliminateOverlapFunction(BaseFunction):
     def _load_gdb_layers(self, gdb_path):
         """加载GDB中的图层"""
         try:
+            import fiona
             # 获取GDB中的所有图层
-            layers = [layer for layer in gpd.list_layers(gdb_path) if layer.geom_type == 'Polygon']
-            layer_names = [layer.name for layer in layers]
+            layer_names = []
+            with fiona.Env():
+                # 列出所有图层名称
+                all_layers = fiona.listlayers(gdb_path)
+                for layer_name in all_layers:
+                    # 直接添加所有图层，不做几何类型过滤
+                    layer_names.append(layer_name)
             
             self.source_layer_combo.clear()
-            self.source_layer_combo.addItems(layer_names)
-            self.source_layer_combo.setEnabled(True)
+            if layer_names:
+                self.source_layer_combo.addItems(layer_names)
+                self.source_layer_combo.setEnabled(True)
+            else:
+                self.source_layer_combo.addItem("GDB中未找到图层")
+                self.source_layer_combo.setEnabled(False)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.showError(f"加载GDB图层失败: {str(e)}")
     
     def _on_layer_changed(self, layer_name):

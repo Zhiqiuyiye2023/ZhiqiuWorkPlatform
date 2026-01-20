@@ -3,7 +3,7 @@ import sys
 import os
 
 # 版本号定义
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 """
 python.exe -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
@@ -439,24 +439,15 @@ class Window(FluentWindow):
         # 创建系统主题监听器（用于跟随系统设置）
         self.themeListener = SystemThemeListener(self)
 
-        # create sub interface
+        # 只创建必要的界面，其他界面延迟创建
         self.homeInterface = HomeInterface(self)  # 使用炫酷的首页界面
         self.appInterface = AppCardInterface(self)  # 使用应用卡片界面
+        self.settingInterface = SettingInterface(self)  # 设置界面
         
-
-        self.settingInterface = SettingInterface(self)
-        
-        # 加载GIS工作流界面
-        from interfaces.gis_workflow_interface import GisWorkflowInterface
-        self.gisWorkflowInterface = GisWorkflowInterface(self)
-        
-        # 加载自动化工具界面
-        from interfaces.automation_tool_interface import AutomationToolInterface
-        self.automationToolInterface = AutomationToolInterface(self)
-        
-        # 加载新闻分析器界面
-        from interfaces.news_analyzer_interface import NewsAnalyzerInterface
-        self.newsAnalyzerInterface = NewsAnalyzerInterface(self)
+        # 延迟创建的界面 - 初始化为None
+        self.gisWorkflowInterface = None
+        self.automationToolInterface = None
+        self.newsAnalyzerInterface = None
 
         # 启用 acrylic 效果
         self.navigationInterface.setAcrylicEnabled(True)
@@ -483,14 +474,14 @@ class Window(FluentWindow):
         self.addSubInterface(self.homeInterface, FIF.HOME, '主页')
         self.addSubInterface(self.appInterface, FIF.APPLICATION, '应用')
         
-        # 添加GIS工作流界面
-        self.addSubInterface(self.gisWorkflowInterface, FIF.GLOBE, 'GIS工作流')
+        # 添加GIS工作流界面占位符
+        self.addSubInterface(Widget('GIS工作流'), FIF.GLOBE, 'GIS工作流')
         
-        # 添加自动化工具界面
-        self.addSubInterface(self.automationToolInterface, FIF.FIT_PAGE, '自动化工具')
+        # 添加自动化工具界面占位符
+        self.addSubInterface(Widget('自动化工具'), FIF.FIT_PAGE, '自动化工具')
         
-        # 添加新闻分析器界面
-        self.addSubInterface(self.newsAnalyzerInterface, FIF.MESSAGE, '新闻分析器')
+        # 添加新闻分析器界面占位符
+        self.addSubInterface(Widget('新闻分析器'), FIF.MESSAGE, '新闻分析器')
 
         # 添加设置界面
         self.addSubInterface(self.settingInterface, FIF.SETTING, '设置', NavigationItemPosition.BOTTOM)
@@ -508,12 +499,11 @@ class Window(FluentWindow):
         # 设置窗口最小大小和初始大小
         self.setMinimumSize(1200, 800)
         self.resize(1200, 800)
-        self.setWindowIcon(QIcon(':/qfluentwidgets/images/logo.png'))
+        
+        # 使用本地图标，避免资源路径问题，加快启动速度
+        self.setWindowIcon(QIcon('logo.ico'))
         self.setWindowTitle(f'知秋工作平台 v{VERSION}')
         
-        # 应用配置中的 Mica 效果设置
-        self.setMicaEffectEnabled(cfg.get(cfg.micaEnabled))
-
         # 创建自定义启动画面（隐藏控制按钮）
         self.splashScreen = CustomSplashScreen(self.windowIcon(), self)
         self.splashScreen.setIconSize(QSize(106, 106))
@@ -526,6 +516,10 @@ class Window(FluentWindow):
         # 默认以还原大小显示窗口（避免显示过程中看到窗口控制按钮）
         self.show()
         QApplication.processEvents()
+        
+        # 应用配置中的 Mica 效果设置 - 延迟应用
+        from configs.config import cfg
+        QTimer.singleShot(100, lambda: self.setMicaEffectEnabled(cfg.get(cfg.micaEnabled)))
 
         # 延迟收拢导航栏，确保布局完成后再收拢
         QTimer.singleShot(100, self._collapseNavigation)
@@ -599,7 +593,7 @@ class Window(FluentWindow):
         self.adjustLayoutOnWindowStateChanged(True)  # True表示最大化状态
 
     def switchTo(self, interface):
-        """重写switchTo方法，实现页面切换资源管理"""
+        """重写switchTo方法，实现页面切换资源管理和延迟初始化"""
         # 获取当前正在显示的界面
         current_widget = self.stackedWidget.currentWidget()
         
@@ -607,7 +601,41 @@ class Window(FluentWindow):
         if current_widget and hasattr(current_widget, 'hideEvent'):
             from PyQt6.QtGui import QHideEvent
             current_widget.hideEvent(QHideEvent())
-            
+        
+        # 延迟初始化界面
+        from configs.config import cfg
+        
+        # 获取界面索引
+        interface_index = self.stackedWidget.indexOf(interface)
+        
+        if interface_index == 2:  # GIS工作流界面
+            if self.gisWorkflowInterface is None:
+                from interfaces.gis_workflow_interface import GisWorkflowInterface
+                self.gisWorkflowInterface = GisWorkflowInterface(self)
+                # 移除占位符，添加真实界面
+                self.stackedWidget.removeWidget(interface)
+                self.addSubInterface(self.gisWorkflowInterface, FIF.GLOBE, 'GIS工作流', index=2)
+                # 切换到新添加的界面
+                interface = self.gisWorkflowInterface
+        elif interface_index == 3:  # 自动化工具界面
+            if self.automationToolInterface is None:
+                from interfaces.automation_tool_interface import AutomationToolInterface
+                self.automationToolInterface = AutomationToolInterface(self)
+                # 移除占位符，添加真实界面
+                self.stackedWidget.removeWidget(interface)
+                self.addSubInterface(self.automationToolInterface, FIF.FIT_PAGE, '自动化工具', index=3)
+                # 切换到新添加的界面
+                interface = self.automationToolInterface
+        elif interface_index == 4:  # 新闻分析器界面
+            if self.newsAnalyzerInterface is None:
+                from interfaces.news_analyzer_interface import NewsAnalyzerInterface
+                self.newsAnalyzerInterface = NewsAnalyzerInterface(self)
+                # 移除占位符，添加真实界面
+                self.stackedWidget.removeWidget(interface)
+                self.addSubInterface(self.newsAnalyzerInterface, FIF.MESSAGE, '新闻分析器', index=4)
+                # 切换到新添加的界面
+                interface = self.newsAnalyzerInterface
+        
         # 调用父类方法
         super().switchTo(interface)
     

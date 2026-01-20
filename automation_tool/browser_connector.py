@@ -52,3 +52,16 @@ class BrowserConnector:
         :return: 浏览器页面实例，未连接返回None
         """
         return self.page
+    
+    def get_page_title(self) -> str:
+        """
+        获取当前网页标题
+        :return: 当前网页标题，未连接返回空字符串
+        """
+        if self.is_connected and self.page:
+            try:
+                return self.page.title
+            except Exception as e:
+                print(f"获取网页标题失败: {e}")
+                return ""
+        return ""

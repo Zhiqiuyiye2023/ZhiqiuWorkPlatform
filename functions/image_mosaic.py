@@ -11,9 +11,9 @@ root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QFileDialog, QHeaderView, QTableWidgetItem, QPushButton
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QFileDialog, QHeaderView, QTableWidgetItem, QPushButton, QGroupBox, QVBoxLayout, QWidget, QFrame
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from qfluentwidgets import ComboBox, PrimaryPushButton, ProgressBar, LineEdit, TableWidget
+from qfluentwidgets import ComboBox, PushButton, ProgressBar, LineEdit, TableWidget
 from qfluentwidgets import FluentIcon as FIF
 from .base_function import BaseFunction
 
@@ -60,17 +60,19 @@ class MosaicThread(QThread):
     error = pyqtSignal(str)        # 错误信号，传递错误信息
     progress_update = pyqtSignal(int) # 进度更新信号
     
-    def __init__(self, files, out_format, output_name="mosaic_result", parent=None):
+    def __init__(self, files, out_format, output_path, output_name="mosaic_result", parent=None):
         """
         Args:
             files: 影像文件列表
             out_format: 输出格式
+            output_path: 输出文件路径
             output_name: 输出影像名称
             parent: 父对象
         """
         super().__init__(parent)
         self.files = files
         self.out_format = out_format
+        self.output_path = output_path
         self.output_name = output_name
     
     def run(self):
@@ -95,7 +97,7 @@ class MosaicThread(QThread):
             file_text = "\n".join(self.files)
             
             # 执行影像拼接
-            影像拼接(file_text, update_progress, out_format=self.out_format, out_res=None, output_name=self.output_name)
+            影像拼接(file_text, update_progress, out_format=self.out_format, out_res=None, output_name=self.output_name, output_path=self.output_path)
             
             self.success.emit("影像拼接完成！")
         except Exception as e:
@@ -119,78 +121,203 @@ class ImageMosaicFunction(BaseFunction):
     
     def _initUI(self):
         """初始化界面"""
-        # 第一行：提示标签
-        infoLabel = QLabel(
-            "📢 <span style='color: orange; font-weight: bold;'>提示：</span>"
-            "<br>1. 可拖拽或点击添加影像文件"
-            "<br>2. 支持格式：TIF、IMG"
-            "<br>3. 可设置输出格式和分辨率"
-            "<br>4. 拼接结果保存在输入文件所在目录"
-        )
-        infoLabel.setWordWrap(True)
-        self.contentLayout.addWidget(infoLabel)
+        # 移除提示标签，根据用户要求不再显示
         
-        # 第二行：影像文件表格
+        # 输入影像设置区域
+        input_group = QGroupBox("输入影像设置", self)
+        input_layout = QVBoxLayout(input_group)
+        
+        # 影像文件表格
         self.imageTable = DragDropTableWidget(self, self._add_images_to_table)
         self.imageTable.setColumnCount(5)
-        self.imageTable.setHorizontalHeaderLabels(['路径', '分度带', '波段', '分辨率', '操作'])
+        self.imageTable.setHorizontalHeaderLabels(['路径', '坐标系', '分度带', '波段', '分辨率'])
         
+        # 设置表格属性：内容不换行，显示省略号
+        self.imageTable.setWordWrap(False)
+        self.imageTable.setTextElideMode(Qt.TextElideMode.ElideMiddle)  # 设置文本省略方式为中间省略
+        
+        # 设置列宽策略：表格匹配页面宽度，列宽相对固定
         header = self.imageTable.horizontalHeader()
         if header:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            for i in range(1, 5):
-                header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+            # 表格整体适应页面宽度
+            self.imageTable.horizontalHeader().setStretchLastSection(False)
+            
+            # 设置各列的宽度分配：路径列拉伸，其他列固定宽度
+            # 使用ResizeMode.Interactive允许用户手动调整，但初始宽度固定
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # 路径列拉伸，适应页面宽度
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # 坐标系列
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # 分度带列
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)  # 波段列
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)  # 分辨率列
+            
+            # 设置初始固定宽度
+            header.resizeSection(1, 120)  # 坐标系列
+            header.resizeSection(2, 150)  # 分度带列
+            header.resizeSection(3, 60)   # 波段列
+            header.resizeSection(4, 100)  # 分辨率列
+        
+        # 设置行高
+        self.imageTable.verticalHeader().setDefaultSectionSize(30)
         
         # 设置与表格比对功能一致的样式
         self.imageTable.setAlternatingRowColors(True)
         self.imageTable.setBorderVisible(True)
         
-        # 移除固定宽度，让表格自适应宽度
-        self.contentLayout.addWidget(self.imageTable)
+        input_layout.addWidget(self.imageTable)
         
-        # 第三行：控件平铺一行
-        fileParamLayout = QHBoxLayout()
-        
-        self.addImageButton = PrimaryPushButton(self.tr('添加'), self, FIF.ADD)
+        # 添加和移除影像文件按钮
+        buttons_layout = QHBoxLayout()
+        self.addImageButton = PushButton("添加影像", self, FIF.ADD)
         self.addImageButton.setToolTip("点击选择影像文件")
         self.addImageButton.clicked.connect(self._on_add_image)
-        fileParamLayout.addWidget(self.addImageButton)
+        self.addImageButton.setFixedWidth(120)
         
-        # 输出文件名输入框
-        self.outputNameLabel = QLabel("输出名称：")
-        fileParamLayout.addWidget(self.outputNameLabel)
+        # 移除选中影像按钮
+        self.removeImageButton = PushButton("移除选中", self, FIF.DELETE)
+        self.removeImageButton.setToolTip("移除选中的影像文件")
+        self.removeImageButton.clicked.connect(self._on_remove_image)
+        self.removeImageButton.setFixedWidth(120)
         
+        buttons_layout.addWidget(self.addImageButton)
+        buttons_layout.addWidget(self.removeImageButton)
+        buttons_layout.addStretch(1)
+        input_layout.addLayout(buttons_layout)
+        
+        # 输出设置区域
+        output_group = QGroupBox("输出设置", self)
+        output_layout = QVBoxLayout(output_group)
+        
+        # 输出路径设置（包含输出名称和格式，全部放在同一行）
+        output_row_layout = QHBoxLayout()
+        output_row_layout.setSpacing(12)
+        
+        # 输出路径
+        output_path_label = QLabel("输出路径：")
+        self.output_path = LineEdit(self)
+        self.output_path.setPlaceholderText("选择输出文件路径")
+        self.output_path.setReadOnly(True)
+        
+        self.output_path_btn = PushButton("选择路径", self, FIF.FOLDER)
+        self.output_path_btn.clicked.connect(self._select_output_path)
+        self.output_path_btn.setFixedWidth(120)
+        
+        # 输出文件名
+        output_name_label = QLabel("输出名称：")
         self.outputNameEdit = LineEdit(self)
         self.outputNameEdit.setText("mosaic_result")
-        self.outputNameEdit.setPlaceholderText("请输入输出影像名称")
+        self.outputNameEdit.setPlaceholderText("输出影像名称")
         self.outputNameEdit.setFixedWidth(150)
-        fileParamLayout.addWidget(self.outputNameEdit)
+        self.outputNameEdit.textChanged.connect(self._update_output_path)
         
+        # 输出格式
         self.formatLabel = QLabel("输出格式：")
-        fileParamLayout.addWidget(self.formatLabel)
-        
         self.formatCombo = ComboBox(self)
         self.formatCombo.addItems(["tif", "img"])
         self.formatCombo.setCurrentIndex(0)
         self.formatCombo.setFixedWidth(80)
-        fileParamLayout.addWidget(self.formatCombo)
+        self.formatCombo.currentTextChanged.connect(self._update_output_path)
         
-        self.buttonAW = PrimaryPushButton(self.tr('开始拼接'), self, FIF.SEND)
+        # 将所有组件按顺序添加到同一行
+        output_row_layout.addWidget(output_path_label)
+        output_row_layout.addWidget(self.output_path, 1)
+        output_row_layout.addWidget(self.output_path_btn)
+        output_row_layout.addWidget(output_name_label)
+        output_row_layout.addWidget(self.outputNameEdit)
+        output_row_layout.addWidget(self.formatLabel)
+        output_row_layout.addWidget(self.formatCombo)
+        
+        output_layout.addLayout(output_row_layout)
+        
+        # 进度条容器
+        self.progress_container = QWidget(self)
+        self.progress_layout = QVBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_layout.setSpacing(5)
+        
+        # 进度文本
+        self.progress_text = QLabel("准备开始拼接...", self)
+        self.progress_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_text.setStyleSheet("QLabel { font-weight: bold; }")
+        
+        # 进度条
+        self.progress_bar = QFrame(self)
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setStyleSheet("""
+            QFrame {
+                background-color: #e0e0e0;
+                border-radius: 2px;
+            }
+        """)
+        
+        # 将进度文本和进度条添加到容器
+        self.progress_layout.addWidget(self.progress_text)
+        self.progress_layout.addWidget(self.progress_bar)
+        
+        # 设置容器初始不可见
+        self.progress_container.setVisible(False)
+        
+        # 将所有组件添加到内容布局
+        self.contentLayout.addWidget(input_group)
+        self.contentLayout.addWidget(output_group)
+        self.contentLayout.addSpacing(20)
+        self.contentLayout.addWidget(self.progress_container)
+        
+        # 添加执行按钮
+        self.buttonAW = PushButton(self.tr('开始拼接'), self, FIF.SEND)
         self.buttonAW.clicked.connect(self.execute)
-        fileParamLayout.addWidget(self.buttonAW)
+        self.buttonAW.setFixedWidth(180)
         
-        self.contentLayout.addLayout(fileParamLayout)
-        
-        # 第四行：进度条
-        self.progressBarImage = ProgressBar(self)
-        self.progressBarImage.hide()
-        self.contentLayout.addWidget(self.progressBarImage)
+        # 执行按钮布局
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch(1)
+        btn_layout.addWidget(self.buttonAW)
+        btn_layout.addStretch(1)
+        self.contentLayout.addLayout(btn_layout)
     
     def _on_add_image(self):
         """添加影像文件"""
         files, _ = QFileDialog.getOpenFileNames(self, "选择影像文件", "", "影像文件 (*.tif *.tiff *.img)")
         if files:
             self._add_images_to_table(files)
+            # 自动生成输出路径
+            if files and not self.output_path.text():
+                self._auto_generate_output_path(files[0])
+    
+    def _on_remove_image(self):
+        """移除选中的影像文件"""
+        # 获取选中的行
+        selected_rows = set()
+        for index in self.imageTable.selectedIndexes():
+            selected_rows.add(index.row())
+        
+        # 按行号从大到小移除，避免索引混乱
+        for row in sorted(selected_rows, reverse=True):
+            self.imageTable.removeRow(row)
+    
+    def _select_output_path(self):
+        """选择输出路径"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "选择输出文件", "", f"影像文件 (*.{self.formatCombo.currentText()})")
+        if file_path:
+            self.output_path.setText(file_path)
+    
+    def _auto_generate_output_path(self, input_path):
+        """自动生成输出路径"""
+        dir_name = os.path.dirname(input_path)
+        base_name = self.outputNameEdit.text()
+        ext = self.formatCombo.currentText()
+        output_path = os.path.join(dir_name, f"{base_name}.{ext}")
+        self.output_path.setText(output_path)
+    
+    def _update_output_path(self):
+        """更新输出路径"""
+        if self.output_path.text():
+            # 保留目录部分，更新文件名和扩展名
+            dir_name = os.path.dirname(self.output_path.text())
+            base_name = self.outputNameEdit.text()
+            ext = self.formatCombo.currentText()
+            output_path = os.path.join(dir_name, f"{base_name}.{ext}")
+            self.output_path.setText(output_path)
     
     def _add_images_to_table(self, files):
         """添加影像到表格"""
@@ -212,6 +339,22 @@ class ImageMosaicFunction(BaseFunction):
                         try:
                             crs = src.crs
                             zone = ''
+                            # 坐标系信息 - 精简显示
+                            if crs:
+                                crs_str = str(crs)
+                                # 精简 CGCS2000 / 3-degree Gauss-Kruger zone 36 为 CGCS2000 3度带36
+                                if 'CGCS2000' in crs_str and '3-degree' in crs_str:
+                                    import re
+                                    zone_match = re.search(r'zone\s+(\d+)', crs_str)
+                                    if zone_match:
+                                        zone_num = zone_match.group(1)
+                                        coord_system = f"CGCS2000 3度带{zone_num}"
+                                    else:
+                                        coord_system = "CGCS2000 3度带"
+                                else:
+                                    coord_system = crs_str.split('/')[0].strip() if '/' in crs_str else crs_str
+                            else:
+                                coord_system = '未知'
                             if crs and crs.is_projected:
                                 # 优先尝试UTM带
                                 if 'utm_zone' in crs.to_dict():
@@ -235,12 +378,14 @@ class ImageMosaicFunction(BaseFunction):
                                             zone = f"3度带:{zone3} 6度带:{zone6}"
                         except Exception:
                             zone = ''
+                            coord_system = '未知'
                         bands = str(src.count)
                         xres = abs(src.transform.a)
                         yres = abs(src.transform.e)
                         res_str = f"{xres:.3f} x {yres:.3f}"
                 except Exception as e:
                     zone = ''
+                    coord_system = '未知'
                     bands = ''
                     res_str = ''
                 
@@ -248,23 +393,17 @@ class ImageMosaicFunction(BaseFunction):
                 row = self.imageTable.rowCount()
                 self.imageTable.insertRow(row)
                 self.imageTable.setItem(row, 0, QTableWidgetItem(file_path))
-                self.imageTable.setItem(row, 1, QTableWidgetItem(str(zone)))
-                self.imageTable.setItem(row, 2, QTableWidgetItem(bands))
-                self.imageTable.setItem(row, 3, QTableWidgetItem(res_str))
-                
-                # 移除按钮
-                btn = QPushButton("移除")
-                def make_remove_callback(current_row):
-                    def remove_row():
-                        self.imageTable.removeRow(current_row)
-                    return remove_row
-                btn.clicked.connect(make_remove_callback(row))
-                self.imageTable.setCellWidget(row, 4, btn)
+                self.imageTable.setItem(row, 1, QTableWidgetItem(coord_system))
+                self.imageTable.setItem(row, 2, QTableWidgetItem(str(zone)))
+                self.imageTable.setItem(row, 3, QTableWidgetItem(bands))
+                self.imageTable.setItem(row, 4, QTableWidgetItem(res_str))
     
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
         if self.imageTable.rowCount() == 0:
             return False, "请至少添加一个影像文件"
+        if not self.output_path.text():
+            return False, "请选择输出路径"
         return True, ""
     
     def execute(self):
@@ -288,14 +427,15 @@ class ImageMosaicFunction(BaseFunction):
         
         out_format = self.formatCombo.currentText()
         
-        # 显示进度条
-        self.progressBarImage.show()
-        self.progressBarImage.setValue(0)
+        # 显示进度容器
+        self.progress_container.setVisible(True)
+        self.progress_text.setText("准备开始拼接...")
         
         # 创建并启动影像拼接线程
         self.mosaic_thread = MosaicThread(
             files=files,
             out_format=out_format,
+            output_path=self.output_path.text(),
             parent=self
         )
         
@@ -310,16 +450,45 @@ class ImageMosaicFunction(BaseFunction):
     
     def _onMosaicProgress(self, progress: int):
         """影像拼接进度更新处理"""
-        self.progressBarImage.setValue(progress)
+        # 更新进度文本，显示百分比
+        self.progress_text.setText(f"正在拼接... {progress}%")
+        
+        # 使用字符串拼接方式，避免花括号冲突
+        progress_ratio = progress / 100.0
+        style = """
+            QFrame {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #0078D4, stop:""" + str(progress_ratio) + """ #0078D4, 
+                    stop:""" + str(progress_ratio) + """ #e0e0e0, stop:1 #e0e0e0);
+                border-radius: 2px;
+            }
+        """
+        self.progress_bar.setStyleSheet(style)
     
     def _onMosaicSuccess(self, result_msg: str):
         """影像拼接成功处理"""
-        self.progressBarImage.hide()
+        # 重置进度容器
+        self.progress_container.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QFrame {
+                background-color: #e0e0e0;
+                border-radius: 2px;
+            }
+        """)
+        self.progress_text.setText("准备开始拼接...")
         self.showSuccess(result_msg)
     
     def _onMosaicError(self, error_msg: str):
         """影像拼接错误处理"""
-        self.progressBarImage.hide()
+        # 重置进度容器
+        self.progress_container.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QFrame {
+                background-color: #e0e0e0;
+                border-radius: 2px;
+            }
+        """)
+        self.progress_text.setText("准备开始拼接...")
         self.showError(error_msg)
     
     def _onMosaicFinished(self):

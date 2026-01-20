@@ -17,11 +17,11 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
     
     def __init__(self, parent=None):
         description = (
-            "📢 <b>功能说明：</b><br>"
-            "批量复制/替换/移动/删除/重命名文件/文件夹<br>"
-            "支持从Excel或文本输入批量操作规则"
+            "📢 <b>功能说明：</b><br>"+
+            "批量按表格操作文件与文件夹<br>"+
+            "支持Excel或文本规则输入"
         )
-        super().__init__("批量操作", description, parent)
+        super().__init__("按列表批量操作", description, parent)
         self._initUI()
     
     def _initUI(self):
@@ -55,22 +55,20 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         source_label = QLabel("源路径列:")
         source_label.setStyleSheet("margin-right: 5px;")
         self.source_col_combo = ComboBox(self)
-        self.source_col_combo.setFixedWidth(150)
         source_layout.addWidget(source_label)
-        source_layout.addWidget(self.source_col_combo)
+        source_layout.addWidget(self.source_col_combo, 1)  # 添加拉伸因子，让下拉框占据剩余空间
         
         # 目标路径列
         target_layout = QHBoxLayout()
         target_label = QLabel("目标路径列:")
         target_label.setStyleSheet("margin-right: 5px;")
         self.target_col_combo = ComboBox(self)
-        self.target_col_combo.setFixedWidth(150)
         target_layout.addWidget(target_label)
-        target_layout.addWidget(self.target_col_combo)
+        target_layout.addWidget(self.target_col_combo, 1)  # 添加拉伸因子，让下拉框占据剩余空间
         
-        column_layout.addLayout(source_layout)
+        column_layout.addLayout(source_layout, 1)  # 添加拉伸因子，让两个布局均匀分配空间
         column_layout.addSpacing(20)
-        column_layout.addLayout(target_layout)
+        column_layout.addLayout(target_layout, 1)  # 添加拉伸因子，让两个布局均匀分配空间
         
         self.contentLayout.addLayout(column_layout)
         
@@ -81,7 +79,7 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         left_layout = QVBoxLayout()
         self.source_list_label = QLabel("源路径列表:")
         self.source_text = TextEdit(self)
-        self.source_text.setPlaceholderText("请输入源路径，每行一个\n例如：\nC:/source/file1.txt\nC:/source/file2.txt")
+        self.source_text.setPlaceholderText("请输入源路径，每行一个\n例如：\nC:/source/file1.txt\nC:/source/file2.txt\n\n（创建文件夹时可留空）")
         self.source_text.setFixedHeight(100)
         
         left_layout.addWidget(self.source_list_label)
@@ -91,7 +89,7 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         right_layout = QVBoxLayout()
         self.target_list_label = QLabel("目标路径列表:")
         self.target_text = TextEdit(self)
-        self.target_text.setPlaceholderText("请输入目标路径，每行一个\n例如：\nD:/target/file1.txt\nD:/target/file2.txt")
+        self.target_text.setPlaceholderText("请输入目标路径，每行一个\n例如：\nD:/target/file1.txt\nD:/target/file2.txt\n\n（可单独输入目标路径创建文件夹）")
         self.target_text.setFixedHeight(100)
         
         right_layout.addWidget(self.target_list_label)
@@ -109,6 +107,7 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         self.execute_move_button = PushButton("执行移动", self, FIF.MOVE)
         self.execute_delete_button = PushButton("执行删除", self, FIF.DELETE)
         self.execute_rename_button = PushButton("执行重命名", self, FIF.EDIT)
+        self.execute_create_folder_button = PushButton("执行创建文件夹", self, FIF.FOLDER)
         
         self.load_to_table_button2.clicked.connect(self.load_text_to_table)
         self.execute_copy_button.clicked.connect(self.execute_copy)
@@ -116,6 +115,7 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         self.execute_move_button.clicked.connect(self.execute_move)
         self.execute_delete_button.clicked.connect(self.execute_delete)
         self.execute_rename_button.clicked.connect(self.execute_rename)
+        self.execute_create_folder_button.clicked.connect(self.execute_create_folder)
         
         button_layout.addWidget(self.load_to_table_button2)
         button_layout.addWidget(self.execute_copy_button)
@@ -123,6 +123,7 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
         button_layout.addWidget(self.execute_move_button)
         button_layout.addWidget(self.execute_delete_button)
         button_layout.addWidget(self.execute_rename_button)
+        button_layout.addWidget(self.execute_create_folder_button)
         self.contentLayout.addLayout(button_layout)
         
         # 统计结果标签
@@ -211,8 +212,25 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
             target_lines = [line.strip() for line in target_lines if line.strip()]
             
             copy_data = []
-            for source_path, target_path in zip(source_lines, target_lines):
-                copy_data.append((source_path, target_path))
+            
+            if not target_lines:
+                self.show_warning("警告", "请至少输入一个目标路径")
+                return
+            
+            # 如果有源路径，使用zip匹配；如果没有源路径，只使用目标路径
+            if source_lines:
+                # 取较长列表的长度，不足的用空字符串填充
+                max_length = max(len(source_lines), len(target_lines))
+                source_lines = source_lines + [''] * (max_length - len(source_lines))
+                target_lines = target_lines + [''] * (max_length - len(target_lines))
+                
+                for source_path, target_path in zip(source_lines, target_lines):
+                    if target_path:  # 只处理有目标路径的行
+                        copy_data.append((source_path, target_path))
+            else:
+                # 只有目标路径，源路径留空
+                for target_path in target_lines:
+                    copy_data.append(("", target_path))
                 
             self.display_copy_data(copy_data)
             self.show_success("成功", "数据加载完成")
@@ -397,6 +415,76 @@ class BatchCopyMoveFunction(BaseFileProcessorFunction):
             self.showSuccess(f"重命名操作完成\n成功: {success_count} 个\n失败: {fail_count} 个\n失败的操作已显示在表格中")
         except Exception as e:
             self.showError(f"重命名操作出错: {str(e)}")
+        finally:
+            self.hideProgress()
+    
+    def execute_create_folder(self):
+        """执行批量创建文件夹"""
+        if not self.copy_table.rowCount():
+            self.show_warning("警告", "没有要处理的数据")
+            return
+        
+        try:
+            self.showProgress("正在执行创建文件夹操作...")
+            
+            # 收集操作数据
+            create_data = []
+            for i in range(self.copy_table.rowCount()):
+                target_item = self.copy_table.item(i, 1)
+                if target_item:
+                    target_path = target_item.text()
+                    if target_path:
+                        create_data.append(target_path)
+            
+            if not create_data:
+                self.show_warning("警告", "没有有效的创建文件夹路径")
+                return
+            
+            success_count = 0
+            fail_count = 0
+            failed_operations = []
+            
+            for target_path in create_data:
+                try:
+                    # 创建文件夹，exist_ok=True表示如果文件夹已存在不会报错
+                    os.makedirs(target_path, exist_ok=True)
+                    success_count += 1
+                except Exception as e:
+                    fail_count += 1
+                    failed_operations.append((target_path, str(e)))
+                    print(f"创建文件夹失败 {target_path}: {str(e)}")
+            
+            # 清空表格，只显示失败的操作
+            self.copy_table.setRowCount(0)
+            
+            # 显示失败的操作，使用红色文本
+            from PyQt6.QtGui import QColor, QBrush
+            for target_path, result_msg in failed_operations:
+                # 添加新行
+                row = self.copy_table.rowCount()
+                self.copy_table.insertRow(row)
+                
+                # 设置源路径列为空
+                source_item = QTableWidgetItem("")
+                self.copy_table.setItem(row, 0, source_item)
+                
+                # 设置目标路径列
+                target_item = QTableWidgetItem(target_path)
+                self.copy_table.setItem(row, 1, target_item)
+                
+                # 设置结果列，使用红色文本
+                result_text = f"创建失败: {result_msg}"
+                result_item = QTableWidgetItem(result_text)
+                # 设置红色文本
+                result_item.setForeground(QBrush(QColor(255, 0, 0)))
+                self.copy_table.setItem(row, 2, result_item)
+            
+            # 更新统计标签
+            self.stat_label.setText(f"共计 {self.copy_table.rowCount()} 行")
+            
+            self.showSuccess(f"创建文件夹操作完成\n成功: {success_count} 个\n失败: {fail_count} 个\n失败的操作已显示在表格中")
+        except Exception as e:
+            self.showError(f"创建文件夹操作出错: {str(e)}")
         finally:
             self.hideProgress()
     

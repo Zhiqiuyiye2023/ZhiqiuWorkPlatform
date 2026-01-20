@@ -27,10 +27,6 @@ class FunctionWidgetFactory:
                 from functions.projection import ProjectionFunction
                 return ProjectionFunction()
                 
-            elif app_id == 'area_adjust':
-                from functions.area_adjust import AreaAdjustFunction
-                return AreaAdjustFunction()
-                
             elif app_id == 'dxf_convert':
                 from functions.dxf_convert import DxfConvertFunction
                 return DxfConvertFunction()
@@ -102,18 +98,7 @@ class FunctionWidgetFactory:
                     ImageCropFunction = getattr(module, 'ImageCropFunction')
                     return ImageCropFunction()
                 
-            elif app_id == 'image_crop_by_admin_region':
-                print("尝试导入 ImageCropByAdminRegionFunction")
-                try:
-                    from functions.image_crop_by_admin_region import ImageCropByAdminRegionFunction
-                    return ImageCropByAdminRegionFunction()
-                except Exception as e:
-                    print(f"直接导入失败，尝试动态导入: {e}")
-                    # 动态导入
-                    import importlib
-                    module = importlib.import_module('functions.image_crop_by_admin_region')
-                    ImageCropByAdminRegionFunction = getattr(module, 'ImageCropByAdminRegionFunction')
-                    return ImageCropByAdminRegionFunction()
+
                 
             elif app_id == 'coords_to_shp':
                 try:
@@ -159,12 +144,19 @@ class FunctionWidgetFactory:
                     return TrialPlanSummaryFunction()
                 except Exception as e:
                     print(f"直接导入失败，尝试动态导入: {e}")
+
+            elif app_id == 'gdb_merger':
+                try:
+                    from functions.gdb_merger import GDBMergerFunction
+                    return GDBMergerFunction()
+                except Exception as e:
+                    print(f"直接导入GDBMergerFunction失败，尝试动态导入: {e}")
                     # 动态导入
                     import importlib
-                    module = importlib.import_module('functions.trial_plan_summary')
-                    TrialPlanSummaryFunction = getattr(module, 'TrialPlanSummaryFunction')
-                    return TrialPlanSummaryFunction()
-                
+                    module = importlib.import_module('functions.gdb_merger')
+                    GDBMergerFunction = getattr(module, 'GDBMergerFunction')
+                    return GDBMergerFunction()
+
             elif app_id == 'feature_check':
                 try:
                     from functions.feature_check import FeatureCheckFunction
@@ -272,6 +264,19 @@ class FunctionWidgetFactory:
                     module = importlib.import_module('functions.feature_crop')
                     FeatureCropFunction = getattr(module, 'FeatureCropFunction')
                     return FeatureCropFunction()
+            
+            elif app_id == 'vector_statistics':
+                # 矢量统计功能
+                try:
+                    from functions.vector_statistics import VectorStatisticsFunction
+                    return VectorStatisticsFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.vector_statistics')
+                    VectorStatisticsFunction = getattr(module, 'VectorStatisticsFunction')
+                    return VectorStatisticsFunction()
                 
             # 文件处理功能
             elif app_id == 'file_stat':
@@ -366,7 +371,7 @@ class FunctionWidgetFactory:
                     return FileTableCompareFunction()
                 
             elif app_id == 'file_folder_content_modifier':
-                # 文件与文件夹内容修改功能
+                # 文件名称修改功能
                 try:
                     from functions.file_folder_content_modifier import FileFolderContentModifierFunction
                     return FileFolderContentModifierFunction()
@@ -403,6 +408,19 @@ class FunctionWidgetFactory:
                     module = importlib.import_module('functions.word_merge')
                     WordMergeFunction = getattr(module, 'WordMergeFunction')
                     return WordMergeFunction()
+            
+            elif app_id == 'table_merge':
+                # 表格合并功能
+                try:
+                    from functions.table_merge import TableMergeFunction
+                    return TableMergeFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.table_merge')
+                    TableMergeFunction = getattr(module, 'TableMergeFunction')
+                    return TableMergeFunction()
             
             else:
                 print(f"未找到对应的功能模块: {app_id}")

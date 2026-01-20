@@ -222,25 +222,6 @@ class BaseFunction(QWidget):
             if status and hasattr(self, '_status_indicator') and self._status_indicator is not None:
                 if self._status_indicator.toolTip() != f"执行中: {status}":
                     self._status_indicator.setToolTip(f"执行中: {status}")
-            # 如果子类有进度条UI元素，直接更新
-            if hasattr(self, 'progress_text') and hasattr(self, 'progress_bar'):
-                # 更新进度文本
-                if status:
-                    self.progress_text.setText(f"{status} {percent}%")
-                else:
-                    self.progress_text.setText(f"正在执行... {percent}%")
-                
-                # 更新进度条样式
-                progress_ratio = percent / 100.0
-                # 使用字符串拼接构建CSS样式
-                style = """QFrame {
-                        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                            stop:0 #0078D4, stop:""" + str(progress_ratio) + """ #0078D4, 
-                            stop:""" + str(progress_ratio) + """ #e0e0e0, stop:1 #e0e0e0);
-                        border-radius: 2px;
-                    }
-                """
-                self.progress_bar.setStyleSheet(style)
         except RuntimeError:
             # 捕获UI元素已被删除的错误
             pass

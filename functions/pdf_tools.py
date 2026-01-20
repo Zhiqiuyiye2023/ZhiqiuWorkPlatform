@@ -3,12 +3,13 @@
 PDF文件处理功能
 """
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
-from PyQt6.QtCore import QThread, pyqtSignal
-from qfluentwidgets import TextEdit, PrimaryPushButton, ProgressBar, StateToolTip
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QHeaderView, QTableWidgetItem, QGroupBox
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from qfluentwidgets import TextEdit, PrimaryPushButton, ProgressBar, StateToolTip, TableWidget
 from qfluentwidgets import FluentIcon as FIF
 from .base_function import BaseFunction
 import threading
+import os
 
 
 class PDFProcessThread(QThread):
@@ -74,8 +75,12 @@ class PdfToolsFunction(BaseFunction):
     
     def __init__(self, parent=None):
         description = (
-            "📢 <b>功能说明：</b><br>"
-            "PDF合并、分离、转图片、图片转PDF"
+            "📢 <b>功能说明：</b><br>"+
+            "1. 支持文件拖拽到列表<br>"+
+            "2. PDF合并：将多个PDF合并为一个文件<br>"+
+            "3. PDF转图片：将PDF转换为高清图片<br>"+
+            "4. PDF分离：将PDF拆分为单页文件<br>"+
+            "5. 图片转PDF：将多张图片合并为一个PDF"
         )
         super().__init__("PDF文件处理功能", description, parent)
         
@@ -83,28 +88,43 @@ class PdfToolsFunction(BaseFunction):
         # 不使用默认执行按钮，使用自定义4个功能按钮
         self.stateTooltip = None
         self._running = False
+        # 启用拖拽支持
+        self.setAcceptDrops(True)
     
     def _initUI(self):
         """初始化界面"""
-        # 功能说明标签
-        infoLabel = QLabel(
-            "📢 <span style='color: orange; font-weight: bold;'>提示：</span>"
-            "<br>1. 支持文件拖拽到文本框"
-            "<br>2. PDF合并：将多个PDF合并为一个文件"
-            "<br>3. PDF转图片：将PDF转换为高清图片"
-            "<br>4. PDF分离：将PDF拆分为单页文件"
-            "<br>5. 图片转PDF：将多张图片合并为一个PDF"
-        )
-        infoLabel.setWordWrap(True)
-        self.contentLayout.addWidget(infoLabel)
         
-        # 文本编辑框用于显示文件路径
-        self.textEditR = TextEdit(self)
-        self.textEditR.setPlaceholderText(
-            "请将文件拖拽到此处，每个文件一行\n支持的格式：\nPDF合并/分离：*.pdf\nPDF转图片：*.pdf\n图片转PDF：*.png, *.jpg, *.jpeg, *.bmp, *.gif")
-        self.textEditR.setFixedHeight(150)
-        self.textEditR.setFixedWidth(1070)
-        self.contentLayout.addWidget(self.textEditR)
+        # 文件列表展示区域
+        file_list_group = QGroupBox("已选择文件", self)
+        file_list_layout = QVBoxLayout(file_list_group)
+        file_list_group.setFixedWidth(800)
+        
+        # 表格显示区域（参考矢量统计面板样式）
+        self.table_widget = TableWidget(self)
+        self.table_widget.setColumnCount(2)
+        self.table_widget.setHorizontalHeaderLabels(["文件名", "文件大小"])
+        self.table_widget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # 文件名自适应宽度
+        self.table_widget.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # 文件大小固定宽度
+        self.table_widget.setColumnWidth(1, 100)  # 文件大小列固定宽度100px
+        self.table_widget.setAlternatingRowColors(True)
+        self.table_widget.setFixedHeight(200)
+        self.table_widget.setBorderVisible(True)
+        file_list_layout.addWidget(self.table_widget)
+        
+        self.contentLayout.addWidget(file_list_group)
+        
+        # 添加文件按钮区域
+        add_button_layout = QHBoxLayout()
+        self.add_files_button = PrimaryPushButton(self.tr('添加文件'), self, FIF.ADD)
+        self.add_files_button.clicked.connect(self._add_files)
+        
+        self.clear_files_button = PrimaryPushButton(self.tr('清空列表'), self, FIF.DELETE)
+        self.clear_files_button.clicked.connect(self._clear_files)
+        
+        add_button_layout.addWidget(self.add_files_button)
+        add_button_layout.addWidget(self.clear_files_button)
+        add_button_layout.addStretch()
+        self.contentLayout.addLayout(add_button_layout)
         
         # 按钮布局
         buttonLayout = QHBoxLayout()
@@ -132,15 +152,81 @@ class PdfToolsFunction(BaseFunction):
         
         # 进度条
         self.progressBarPDF = ProgressBar(self)
-        self.progressBarPDF.setFixedWidth(1070)
+        self.progressBarPDF.setFixedWidth(800)
         self.progressBarPDF.hide()  # 默认隐藏进度条
         self.contentLayout.addWidget(self.progressBarPDF)
     
+    def _format_file_size(self, size_bytes):
+        """格式化文件大小"""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} PB"
+    
+    def _add_files(self):
+        """通过文件选择对话框添加文件"""
+        from PyQt6.QtWidgets import QFileDialog
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "选择文件", "", "PDF文件 (*.pdf);;图片文件 (*.png *.jpg *.jpeg *.bmp *.gif);;所有文件 (*.*)"
+        )
+        
+        if files:
+            self._add_files_to_table(files)
+    
+    def _add_files_to_table(self, files):
+        """将文件添加到表格"""
+        for file_path in files:
+            # 添加新行
+            row = self.table_widget.rowCount()
+            self.table_widget.insertRow(row)
+            
+            # 设置文件名
+            file_name = os.path.basename(file_path)
+            self.table_widget.setItem(row, 0, QTableWidgetItem(file_path))
+            
+            # 设置文件大小
+            file_size = os.path.getsize(file_path)
+            size_str = self._format_file_size(file_size)
+            self.table_widget.setItem(row, 1, QTableWidgetItem(size_str))
+    
+    def _clear_files(self):
+        """清空文件列表"""
+        self.table_widget.setRowCount(0)
+    
+    def _get_files_from_table(self):
+        """从表格获取文件列表"""
+        files = []
+        for row in range(self.table_widget.rowCount()):
+            file_item = self.table_widget.item(row, 0)
+            if file_item:
+                file_path = file_item.text()
+                if file_path:
+                    files.append(file_path)
+        return files
+    
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
-        if not self.textEditR.toPlainText().strip():
-            return False, "请输入或拖拽文件路径"
+        files = self._get_files_from_table()
+        if not files:
+            return False, "请添加文件到列表"
         return True, ""
+    
+    def dragEnterEvent(self, event):
+        """拖拽进入事件处理"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+    
+    def dropEvent(self, event):
+        """拖拽释放事件处理"""
+        new_files = []
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if os.path.isfile(file_path):  # 只处理文件
+                new_files.append(file_path)
+        
+        if new_files:
+            self._add_files_to_table(new_files)
     
     def _executeFunction(self, function_type: str):
         """执行功能
@@ -169,8 +255,9 @@ class PdfToolsFunction(BaseFunction):
         if function_type == 'pdf转图片':
             function_type = 'PDF转图片'
         
-        # 获取文件路径文本
-        file_text = self.textEditR.toPlainText()
+        # 获取文件路径列表
+        files = self._get_files_from_table()
+        file_text = '\n'.join(files)
         
         # 创建并配置线程
         thread = PDFProcessThread(function_type, (file_text,), self)

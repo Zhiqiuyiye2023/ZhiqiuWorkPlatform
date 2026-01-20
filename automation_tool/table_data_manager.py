@@ -111,3 +111,13 @@ class TableDataManager:
         :return: 总记录数
         """
         return len(self.data)
+    
+    def clear(self) -> None:
+        """
+        清除已加载的表格数据
+        """
+        self.file_path = ""
+        self.data = []
+        self.fields = []
+        self.current_record = None
+        self.current_index = -1

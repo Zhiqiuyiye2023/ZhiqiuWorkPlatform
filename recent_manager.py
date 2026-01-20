@@ -37,7 +37,6 @@ class RecentAppsManager:
         self.app_titles = {
             'data_overlay': '数据叠加套合',
             'field_split': '字段分离要素',
-            'area_adjust': '面积调整要素',
             'projection': '投影转换',
             'dxf_convert': 'DXF转SHP',
             'merge_features': '合并要素',
@@ -49,19 +48,19 @@ class RecentAppsManager:
             'image_mosaic': '影像拼接',
             'center_point': '获取中心点',
             'image_crop': '影像裁剪',
-            'image_crop_by_admin_region': '影像裁剪-行政区',
+
             'coords_to_shp': '坐标转SHP',
             'land_department_coords': '征地部坐标转换',
             'file_stat': '文件统计',
             'move_copy': '移动复制',
-            'data_process': '数据处理',
+            'data_process': '文本重复整合',
             'batch_rename': '批量重命名',
             'eliminate_features': '消除面',
             'polygon_to_line': '要素面转线',
             'batch_change_extension': '批量修改后缀',
-            'batch_copy_move': '批量操作',
+            'batch_copy_move': '按列表批量操作',
             'file_table_compare': '表格比对',
-            'file_folder_content_modifier': '文件与文件夹内容修改',
+            'file_folder_content_modifier': '文件名称修改',
             'dissolve_features': '融合要素',
             'identify_features': '标识要素',
             'trial_plan_summary': '试划成果总结统计',
@@ -72,15 +71,17 @@ class RecentAppsManager:
             'eliminate_overlap': '要素去重叠',
             'feature_intersection': '要素相交',
             'feature_crop': '要素裁剪',
+            'vector_statistics': '矢量统计',
             'layout_agent': '文档排版',
             'word_merge': 'Word文档合并',
+            'table_merge': '表格合并',
+            'gdb_merger': 'GDB合并',
         }
         
         # 应用图标映射
         self.app_icons = {
             'data_overlay': 'TILES',
             'field_split': 'CUT',
-            'area_adjust': 'ZOOM',
             'projection': 'GLOBE',
             'dxf_convert': 'DOCUMENT',
             'merge_features': 'ACCEPT',
@@ -95,7 +96,7 @@ class RecentAppsManager:
             'image_mosaic': 'PHOTO',
             'center_point': 'PIN',
             'image_crop': 'CUT',
-            'image_crop_by_admin_region': 'CUT',
+
             'coords_to_shp': 'PIN',
             'land_department_coords': 'DOCUMENT',
             'file_stat': 'FOLDER',
@@ -103,7 +104,7 @@ class RecentAppsManager:
             'data_process': 'ALIGNMENT',
             'batch_rename': 'EDIT',
             'batch_change_extension': 'EDIT',
-            'batch_copy_move': 'SYNC',
+            'batch_copy_move': 'COPY',
             'file_table_compare': 'SEARCH',
             'file_folder_content_modifier': 'EDIT',
             'identify_features': 'MARKET',
@@ -115,8 +116,11 @@ class RecentAppsManager:
             'eliminate_overlap': 'DELETE',
             'feature_intersection': 'LAYOUT',
             'feature_crop': 'CUT',
+            'vector_statistics': 'DOCUMENT',
             'layout_agent': 'DOCUMENT',
             'word_merge': 'DOCUMENT',
+            'table_merge': 'DOCUMENT',
+            'gdb_merger': 'FOLDER',
         }
     
     def add_recent_app(self, app_id: str):

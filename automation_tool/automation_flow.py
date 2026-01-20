@@ -50,6 +50,12 @@ class AutomationFlow(QObject):
         """
         return self.table_manager.load_table(file_path)
     
+    def clear_table(self) -> None:
+        """
+        清除已加载的表格数据
+        """
+        self.table_manager.clear()
+    
     def start_automation(self) -> None:
         """
         开始自动化流程

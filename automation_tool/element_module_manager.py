@@ -4,8 +4,10 @@
 元素模块管理器模块
 """
 import json
-from typing import List, Dict, Any, Optional
+import re
+from typing import List, Dict, Any, Optional, Union
 from .element_module import ElementModule
+from .condition_module import ConditionModule
 from DrissionPage import ChromiumPage
 
 
@@ -15,26 +17,46 @@ class ElementModuleManager:
     def __init__(self):
         """
         初始化元素模块管理器"""
-        self.modules = []
+        self.modules = []  # 存储所有模块，包括普通模块和条件模块
         self.module_counter = 0
     
-    def add_module(self, name: str) -> ElementModule:
+    def add_module(self, name: str, index: Optional[int] = None) -> ElementModule:
         """
         添加新的元素模块
         :param name: 模块名称
+        :param index: 模块添加的位置索引，None表示添加到末尾
         :return: 新创建的元素模块实例
         """
         module_id = f"module_{self.module_counter}"
         self.module_counter += 1
         module = ElementModule(module_id, name)
-        self.modules.append(module)
+        if index is None or index >= len(self.modules):
+            self.modules.append(module)
+        else:
+            self.modules.insert(index, module)
         return module
     
-    def get_module(self, module_id: str) -> Optional[ElementModule]:
+    def add_condition_module(self, name: str, index: Optional[int] = None) -> ConditionModule:
         """
-        获取指定ID的元素模块
+        添加新的条件模块
+        :param name: 模块名称
+        :param index: 模块添加的位置索引，None表示添加到末尾
+        :return: 新创建的条件模块实例
+        """
+        module_id = f"condition_{self.module_counter}"
+        self.module_counter += 1
+        module = ConditionModule(module_id, name)
+        if index is None or index >= len(self.modules):
+            self.modules.append(module)
+        else:
+            self.modules.insert(index, module)
+        return module
+    
+    def get_module(self, module_id: str) -> Optional[Union[ElementModule, ConditionModule]]:
+        """
+        获取指定ID的模块
         :param module_id: 模块ID
-        :return: 元素模块实例，未找到返回None
+        :return: 模块实例，未找到返回None
         """
         for module in self.modules:
             if module.module_id == module_id:
@@ -43,7 +65,7 @@ class ElementModuleManager:
     
     def remove_module(self, module_id: str) -> bool:
         """
-        删除指定ID的元素模块
+        删除指定ID的模块
         :param module_id: 模块ID
         :return: 删除成功返回True，失败返回False
         """
@@ -81,10 +103,10 @@ class ElementModuleManager:
         """
         return [module.module_id for module in self.modules]
     
-    def get_all_modules(self) -> List[ElementModule]:
+    def get_all_modules(self) -> List[Union[ElementModule, ConditionModule]]:
         """
-        获取所有元素模块
-        :return: 元素模块列表
+        获取所有模块，包括普通模块和条件模块
+        :return: 模块列表
         """
         return self.modules.copy()
     
@@ -106,85 +128,124 @@ class ElementModuleManager:
         current_variables = variables.copy()
         
         # 执行所有模块
-        i = 0
         print(f"\n{'='*50}")
         print(f"开始处理记录: {variables}")
         print(f"{'='*50}")
         
-        while i < len(self.modules):
+        i = 0
+        module_count = len(self.modules)
+        loop_stack = []  # 用于存储循环信息的栈：(start_index, loop_module, loop_count, current_iteration)
+        
+        while i < module_count and len(loop_stack) < 10:  # 防止无限循环，最多支持10层嵌套
             module = self.modules[i]
-            print(f"\n当前执行第 {i+1}/{len(self.modules)} 个模块: {module.name}")
-            print(f"模块操作类型: {module.action_type}")
-            print(f"模块XPath: {module.xpath}")
-            print(f"模块操作值: {module.action_value} (变量: {module.is_variable})")
-            print(f"模块等待时间: {module.wait_time}秒")
+            print(f"\n当前执行第 {i+1}/{module_count} 个模块: {module.name}")
             
-            # 检查是否需要循环执行模块链
-            if hasattr(module, 'loop_start_module') and module.loop_start_module:
-                # 找到起始模块的索引
-                start_index = -1
-                for idx, m in enumerate(self.modules):
-                    if m.module_id == module.loop_start_module:
-                        start_index = idx
-                        break
+            # 检查模块类型
+            if isinstance(module, ElementModule):
+                # 普通元素模块，正常执行
+                print(f"模块操作类型: {module.action_type}")
+                print(f"模块XPath: {module.xpath}")
+                print(f"模块操作值: {module.action_value} (变量: {module.is_variable})")
+                print(f"模块等待时间: {module.wait_time}秒")
                 
-                if start_index != -1 and start_index < i:  # 确保起始模块在当前模块之前
-                    # 先检查当前模块的文本是否已经与变量内容一致，只有不一致时才执行循环
-                    print(f"开始执行循环链：从模块 {self.modules[start_index].name} 到模块 {module.name}  ")
-                    print(f"应该是先比对是否与变量内容一致，不一致才执行循环")
-                    
-                    # 先执行一次当前模块的比对
-                    result, value = module.execute(page, current_variables)
-                    if result:
-                        print(f"当前模块 '{module.name}' 比对已成功，跳过循环")
-                        # 如果模块配置了变量名称且获取到了值，将其存储到变量字典中
-                        if module.variable_name and value is not None:
-                            current_variables[module.variable_name] = value
-                            print(f"元素模块 '{module.name}' 将值 '{value}' 存储为变量 '{module.variable_name}'")
-                    else:
-                        # 循环执行从起始模块到当前模块的所有模块，直到当前模块比对成功
-                        loop_success = False
-                        loop_count = 0
-                        while not loop_success and i < len(self.modules) and loop_count < 100:  # 添加循环次数限制
-                            loop_count += 1
-                            print(f"\n--- 循环链执行第 {loop_count} 次 ---)")
-                            print(f"当前模块 '{module.name}' 比对失败，开始执行循环链")
-                            
-                            # 执行从起始模块到当前模块的所有模块
-                            for j in range(start_index, i + 1):
-                                loop_module = self.modules[j]
-                                print(f"循环中执行第 {j+1}/{len(self.modules)} 个模块: {loop_module.name}")
-                                result, value = loop_module.execute(page, current_variables)
-                                
-                                if not result:
-                                    if j == i:  # 如果当前模块执行失败（比对失败），继续循环
-                                        print(f"循环链中当前模块 '{loop_module.name}' 比对失败，继续循环...")
-                                        break  # 退出当前循环，重新开始
-                                    else:  # 如果中间模块执行失败，返回整体失败
-                                        print(f"循环链中模块 '{loop_module.name}' 执行失败，退出循环")
-                                        return False
-                                
-                                # 如果模块配置了变量名称且获取到了值，将其存储到变量字典中
-                                if loop_module.variable_name and value is not None:
-                                    current_variables[loop_module.variable_name] = value
-                                    print(f"元素模块 '{loop_module.name}' 将值 '{value}' 存储为变量 '{loop_module.variable_name}'")
-                                
-                                if j == i:  # 如果当前模块执行成功（比对成功），退出循环
-                                    print(f"循环链中当前模块 '{loop_module.name}' 比对成功，退出循环")
-                                    loop_success = True
-            else:
                 # 正常执行模块
                 result, value = module.execute(page, current_variables)
                 if not result:
                     print(f"模块 '{module.name}' 执行失败")
                     return False
                 
-                # 如果模块配置了变量名称且获取到了值，将其存储到变量字典中
-                if module.variable_name and value is not None:
+                # 对于获取文本操作，直接以模块名作为变量名
+                if module.action_type == "获取文本" and value is not None:
+                    current_variables[module.name] = value
+                    print(f"元素模块 '{module.name}' 将值 '{value}' 存储为变量 '{module.name}'")
+                # 对于其他操作，如果配置了变量名称且获取到了值，将其存储到变量字典中
+                elif module.variable_name and value is not None:
                     current_variables[module.variable_name] = value
                     print(f"元素模块 '{module.name}' 将值 '{value}' 存储为变量 '{module.variable_name}'")
-            
-            i += 1
+                
+                i += 1
+            else:
+                # ConditionModule，处理循环逻辑
+                print(f"条件模块类型: {module.condition_type}")
+                print(f"循环类型: {module.loop_type}")
+                
+                if module.loop_type == "开始循环":
+                    # 计算循环次数
+                    loop_count = 1  # 默认循环1次
+                    if module.is_table_field and module.table_field in current_variables:
+                        # 从表格字段获取循环次数，支持从字符串中提取整数
+                        try:
+                            field_value = current_variables[module.table_field]
+                            # 尝试直接转换为整数
+                            loop_count = int(field_value)
+                        except (ValueError, TypeError):
+                            # 如果直接转换失败，尝试从字符串中提取整数
+                            try:
+                                field_value = str(current_variables[module.table_field])
+                                # 使用正则表达式提取第一个整数
+                                match = re.search(r'\d+', field_value)
+                                if match:
+                                    loop_count = int(match.group())
+                                else:
+                                    loop_count = 1  # 没有找到整数，使用默认值
+                            except Exception:
+                                loop_count = 1
+                    elif module.is_variable and module.variable_name in current_variables:
+                        # 从变量获取循环次数，支持从字符串中提取整数
+                        try:
+                            variable_value = current_variables[module.variable_name]
+                            # 尝试直接转换为整数
+                            loop_count = int(variable_value)
+                        except (ValueError, TypeError):
+                            # 如果直接转换失败，尝试从字符串中提取整数
+                            try:
+                                variable_value = str(current_variables[module.variable_name])
+                                # 使用正则表达式提取第一个整数
+                                match = re.search(r'\d+', variable_value)
+                                if match:
+                                    loop_count = int(match.group())
+                                else:
+                                    loop_count = 1  # 没有找到整数，使用默认值
+                            except Exception:
+                                loop_count = 1
+                    elif module.loop_count.isdigit():
+                        # 固定次数
+                        loop_count = int(module.loop_count)
+                    
+                    print(f"开始循环，循环次数: {loop_count}")
+                    
+                    # 将循环信息压入栈
+                    loop_stack.append((i, module, loop_count, 0))
+                    i += 1  # 继续执行下一个模块
+                
+                elif module.loop_type == "结束循环":
+                    # 处理结束循环
+                    if loop_stack:
+                        # 从栈中弹出最近的循环信息
+                        start_index, loop_module, loop_count, current_iteration = loop_stack.pop()
+                        current_iteration += 1
+                        
+                        if current_iteration < loop_count:
+                            # 还需要继续循环，将循环信息重新压入栈，并跳转到循环开始位置
+                            print(f"结束循环，当前循环第 {current_iteration} 次，共需循环 {loop_count} 次，继续下一次循环")
+                            loop_stack.append((start_index, loop_module, loop_count, current_iteration))
+                            i = start_index + 1  # 跳转到循环开始后的第一个模块
+                        else:
+                            # 循环结束
+                            print(f"结束循环，共循环 {current_iteration} 次，循环结束")
+                            i += 1  # 继续执行下一个模块
+                    else:
+                        # 没有对应的开始循环，忽略该结束循环模块
+                        print("警告：遇到结束循环模块，但没有对应的开始循环模块，忽略该模块")
+                        i += 1
+                
+                else:
+                    # 未知的循环类型，忽略
+                    i += 1
+        
+        # 清理所有未结束的循环
+        if loop_stack:
+            print(f"警告：存在 {len(loop_stack)} 个未结束的循环")
         
         # 将更新后的变量字典合并回原始字典，以便外部使用
         variables.update(current_variables)
@@ -197,7 +258,7 @@ class ElementModuleManager:
     
     def save_config(self, file_path: str) -> bool:
         """
-        保存元素模块配置
+        保存模块配置，包括普通模块和条件模块
         :param file_path: 配置文件路径
         :return: 保存成功返回True，失败返回False
         """
@@ -215,7 +276,7 @@ class ElementModuleManager:
     
     def load_config(self, file_path: str) -> bool:
         """
-        加载元素模块配置
+        加载模块配置，包括普通模块和条件模块
         :param file_path: 配置文件路径
         :return: 加载成功返回True，失败返回False
         """
@@ -223,7 +284,17 @@ class ElementModuleManager:
             with open(file_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
             
-            self.modules = [ElementModule.from_dict(data) for data in config.get("modules", [])]
+            # 加载模块，区分普通模块和条件模块
+            self.modules = []
+            for data in config.get("modules", []):
+                if "condition_type" in data:
+                    # 条件模块
+                    module = ConditionModule.from_dict(data)
+                else:
+                    # 普通元素模块
+                    module = ElementModule.from_dict(data)
+                self.modules.append(module)
+            
             self.module_counter = config.get("module_counter", 0)
             
             return True

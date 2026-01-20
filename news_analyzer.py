@@ -34,18 +34,18 @@ def setup_logging():
     log_file = os.path.join(log_dir, 'news_analyzer_gui.log')
     
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARNING,  # 提高日志级别，只记录警告及以上级别的日志
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
+            # 移除StreamHandler，不再将日志输出到终端
         ]
     )
     
     # 创建日志记录器
     logger = logging.getLogger('news_analyzer_gui')
-    logger.info('新闻分析器GUI启动')
-    
+    # 关闭该logger的传播，避免日志传递到父logger
+    logger.propagate = False
     return logger
 
 

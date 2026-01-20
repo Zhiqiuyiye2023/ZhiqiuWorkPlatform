@@ -4,8 +4,8 @@
 版本号: 0.0.5
 """
 
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, QFileDialog, QComboBox, QCheckBox
-from qfluentwidgets import LineEdit, PushButton, TextEdit, ComboBox, CheckBox
+from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, QFileDialog, QComboBox, QCheckBox, QHeaderView, QTableWidgetItem, QGroupBox
+from qfluentwidgets import LineEdit, PushButton, TextEdit, ComboBox, CheckBox, TableWidget
 from qfluentwidgets import FluentIcon as FIF
 from .file_processor_base import BaseFileProcessorFunction
 import os
@@ -16,12 +16,15 @@ class BatchChangeExtensionFunction(BaseFileProcessorFunction):
     
     def __init__(self, parent=None):
         description = (
-            "📢 <b>功能说明：</b><br>" 
-            "批量修改文件后缀<br>" 
-            "支持从Excel文件加载规则或手动输入规则" 
+            "📢 <b>功能说明：</b><br>" +
+            "批量修改后缀<br>" +
+            "支持从Excel文件加载规则或手动输入规则<br>" +
+            "<font color='red'>💡 支持拖拽文件到列表中</font>"
         )
         super().__init__("批量修改后缀", description, parent)
         self._initUI()
+        # 启用拖拽支持
+        self.setAcceptDrops(True)
     
     def _initUI(self):
         """初始化界面"""
@@ -43,6 +46,22 @@ class BatchChangeExtensionFunction(BaseFileProcessorFunction):
         file_layout.addWidget(self.browse_files_button)
         file_layout.addWidget(self.clear_files_button)
         self.contentLayout.addLayout(file_layout)
+        
+        # 文件列表展示区域
+        file_list_group = QGroupBox("已选择文件", self)
+        file_list_layout = QVBoxLayout(file_list_group)
+        
+        # 表格显示区域（参考矢量统计面板样式）
+        self.table_widget = TableWidget(self)
+        self.table_widget.setColumnCount(1)
+        self.table_widget.setHorizontalHeaderLabels(["文件名"])
+        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table_widget.setAlternatingRowColors(True)
+        self.table_widget.setFixedHeight(200)  # 设置固定高度
+        self.table_widget.setBorderVisible(True)
+        file_list_layout.addWidget(self.table_widget)
+        
+        self.contentLayout.addWidget(file_list_group)
         
         # 后缀修改规则区域
         rule_layout = QHBoxLayout()
@@ -94,11 +113,51 @@ class BatchChangeExtensionFunction(BaseFileProcessorFunction):
             self.selected_files.extend(files)
             # 更新显示
             self.file_list_edit.setText(f"已选择 {len(self.selected_files)} 个文件")
+            # 更新表格显示
+            self.update_file_table()
     
     def clear_files(self):
         """清空已选择的文件"""
         self.selected_files.clear()
         self.file_list_edit.setText("已选择 0 个文件")
+        # 清空表格
+        self.table_widget.setRowCount(0)
+    
+    def update_file_table(self):
+        """更新文件列表表格"""
+        # 清空现有表格内容
+        self.table_widget.setRowCount(0)
+        
+        # 添加文件到表格
+        for i, file_path in enumerate(self.selected_files):
+            # 添加新行
+            row = self.table_widget.rowCount()
+            self.table_widget.insertRow(row)
+            
+            # 设置文件名
+            file_name = os.path.basename(file_path)
+            self.table_widget.setItem(row, 0, QTableWidgetItem(file_name))
+    
+    def dragEnterEvent(self, event):
+        """拖拽进入事件处理"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+    
+    def dropEvent(self, event):
+        """拖拽释放事件处理"""
+        files = []
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if os.path.isfile(file_path):  # 只处理文件，不处理文件夹
+                files.append(file_path)
+        
+        if files:
+            # 添加到已选择的文件列表
+            self.selected_files.extend(files)
+            # 更新显示
+            self.file_list_edit.setText(f"已选择 {len(self.selected_files)} 个文件")
+            # 更新表格显示
+            self.update_file_table()
     
     def execute_change_extension(self):
         """执行修改后缀"""

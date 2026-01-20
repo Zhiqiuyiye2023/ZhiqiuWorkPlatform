@@ -3,14 +3,14 @@
 import os
 import geopandas as gpd
 import shapely
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, LineString
 from shapely.validation import make_valid
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QCheckBox, QFileDialog, QListWidget, QListWidgetItem, QProgressBar,
                             QGroupBox, QGridLayout, QFrame, QMessageBox, QSlider, QSizePolicy)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from qfluentwidgets import (PrimaryPushButton, PushButton, ToggleButton, SwitchButton, FluentIcon, InfoBar,
-                            InfoBarPosition, LineEdit, ComboBox)
+                            InfoBarPosition, LineEdit, ComboBox, SpinBox)
 from .base_function import BaseFunction
 
 class FeatureCheckWorker(QThread):
@@ -65,7 +65,8 @@ class FeatureCheckWorker(QThread):
                 'narrow': [],
                 'overlap': [],
                 'roundabout': [],
-                'sharp_angle': []
+                'sharp_angle': [],
+                'tadpole': []
             }
             
             # 检查每个要素
@@ -102,6 +103,16 @@ class FeatureCheckWorker(QThread):
                     if angles:
                         results['sharp_angle'].append(idx)
                         sharp_angle_lines.extend(angles)
+                
+                # 蝌蚪形图斑检查
+                if 'tadpole' in self.check_items:
+                    tadpole_lines = self._check_tadpole(geometry)
+                    if tadpole_lines:
+                        results['tadpole'].append(idx)
+                        # 存储蝌蚪形图斑的线段
+                        if not hasattr(self, 'tadpole_lines'):
+                            self.tadpole_lines = []
+                        self.tadpole_lines.extend(tadpole_lines)
             
             # 面面相叠检查（只保留重叠部分）
             overlap_geometries = []
@@ -185,6 +196,8 @@ class FeatureCheckWorker(QThread):
                 total_result_types += 1
             if 'sharp_angle' in self.check_items:
                 total_result_types += 1
+            if 'tadpole' in self.check_items:
+                total_result_types += 1
             
             processed_types = 0
             
@@ -201,7 +214,7 @@ class FeatureCheckWorker(QThread):
                         # 处理狭长结果，添加宽长比字段
                         narrow_indices = [idx for idx, _ in indices]
                         narrow_gdf = gdf.iloc[narrow_indices].copy()
-                        narrow_gdf['阈值'] = [aspect_ratio for _, aspect_ratio in indices]
+                        narrow_gdf['threshold'] = [aspect_ratio for _, aspect_ratio in indices]
                         result_gdfs[check_type] = narrow_gdf
                     else:
                         # 其他结果直接复制
@@ -223,8 +236,17 @@ class FeatureCheckWorker(QThread):
                 # 创建包含夹角线和角度值的GeoDataFrame
                 angles = [angle for angle, _ in sharp_angle_lines]
                 lines = [line for _, line in sharp_angle_lines]
-                sharp_angle_gdf = gpd.GeoDataFrame({'阈值': angles, 'geometry': lines}, crs=gdf.crs)
+                sharp_angle_gdf = gpd.GeoDataFrame({'threshold': angles, 'geometry': lines}, crs=gdf.crs)
                 result_gdfs['sharp_angle'] = sharp_angle_gdf
+                processed_types += 1
+            
+            # 处理蝌蚪形图斑结果（生成问题线段）
+            if hasattr(self, 'tadpole_lines') and self.tadpole_lines and 'tadpole' in self.check_items:
+                # 创建包含问题线段和距离值的GeoDataFrame
+                distances = [distance for distance, _ in self.tadpole_lines]
+                lines = [line for _, line in self.tadpole_lines]
+                tadpole_gdf = gpd.GeoDataFrame({'distance': distances, 'geometry': lines}, crs=gdf.crs)
+                result_gdfs['tadpole'] = tadpole_gdf
                 processed_types += 1
             
             # 发送结果生成完成信号
@@ -418,6 +440,177 @@ class FeatureCheckWorker(QThread):
                 sharp_angles.extend(self._check_sharp_angle(poly))
         return sharp_angles
     
+    def _check_tadpole(self, geometry):
+        """检查蝌蚪形图斑：一个图斑转换为线段后，出现一条线段与不相接的另一条线段边界距离小于阈值且有一定长度相邻的情况"""
+        # 获取阈值，默认距离阈值1米，长度阈值1米
+        distance_threshold = self.check_params.get('tadpole_distance_threshold', 1.0)
+        length_threshold = self.check_params.get('tadpole_length_threshold', 1.0)
+        
+        import math
+        
+        # 辅助函数：计算线段的方向向量
+        def get_direction_vector(line):
+            coords = list(line.coords)
+            x1, y1 = coords[0]
+            x2, y2 = coords[-1]
+            dx = x2 - x1
+            dy = y2 - y1
+            length = math.hypot(dx, dy)
+            if length == 0:
+                return (0, 0)
+            # 单位向量
+            return (dx / length, dy / length)
+        
+        # 辅助函数：计算两条线段的平行程度（返回角度的余弦值，1表示平行，0表示垂直）
+        def get_parallel_degree(vec1, vec2):
+            # 计算点积
+            dot_product = vec1[0] * vec2[0] + vec1[1] * vec2[1]
+            # 取绝对值，因为平行包括相同方向和相反方向
+            return abs(dot_product)
+        
+        # 辅助函数：计算两条线段的平行重叠长度
+        def get_parallel_overlap_length(line1, line2, distance_threshold, parallel_threshold=0.8):
+            # 计算两条线段的方向向量
+            vec1 = get_direction_vector(line1)
+            vec2 = get_direction_vector(line2)
+            
+            # 计算平行程度，如果小于阈值则认为不平行
+            parallel_degree = get_parallel_degree(vec1, vec2)
+            if parallel_degree < parallel_threshold:
+                return 0.0
+            
+            # 采样间隔，用于检测平行重叠部分
+            sample_interval = 0.5  # 0.5米采样
+            
+            # 对线段1进行采样，检查每个采样点到线段2的距离
+            line1_length = line1.length
+            num_samples = max(2, int(line1_length / sample_interval) + 1)
+            
+            # 记录符合条件的采样点位置
+            valid_samples = []
+            
+            for sample_idx in range(num_samples):
+                # 均匀采样
+                sample_dist = (sample_idx / (num_samples - 1)) * line1_length if num_samples > 1 else 0
+                sample_point = line1.interpolate(sample_dist)
+                
+                # 检查采样点到另一条线段的距离
+                if sample_point.distance(line2) < distance_threshold:
+                    valid_samples.append(sample_dist)
+            
+            # 如果没有足够的采样点，返回0
+            if len(valid_samples) < 2:
+                return 0.0
+            
+            # 计算连续采样点之间的最大距离
+            # 首先排序采样点位置
+            valid_samples.sort()
+            
+            max_overlap_length = 0.0
+            current_start = valid_samples[0]
+            
+            for i in range(1, len(valid_samples)):
+                # 如果两个采样点之间的距离超过采样间隔的2倍，认为是不连续的
+                if valid_samples[i] - valid_samples[i-1] > sample_interval * 2:
+                    # 计算当前连续段的长度
+                    current_length = valid_samples[i-1] - current_start
+                    if current_length > max_overlap_length:
+                        max_overlap_length = current_length
+                    # 开始新的连续段
+                    current_start = valid_samples[i]
+            
+            # 计算最后一个连续段的长度
+            final_length = valid_samples[-1] - current_start
+            if final_length > max_overlap_length:
+                max_overlap_length = final_length
+            
+            return max_overlap_length
+        
+        tadpole_lines = []
+        
+        # 确保几何类型正确
+        if isinstance(geometry, Polygon):
+            # 将多边形转换为线段（仅外部边界）
+            exterior_coords = list(geometry.exterior.coords)
+            if len(exterior_coords) < 2:
+                return tadpole_lines
+            
+            # 生成所有线段及其边界框
+            lines = []
+            line_bboxes = []
+            for i in range(len(exterior_coords) - 1):
+                line = LineString([exterior_coords[i], exterior_coords[i+1]])
+                lines.append(line)
+                # 计算扩展后的边界框，用于快速预检查
+                bbox = line.bounds
+                expanded_bbox = (
+                    bbox[0] - distance_threshold,
+                    bbox[1] - distance_threshold,
+                    bbox[2] + distance_threshold,
+                    bbox[3] + distance_threshold
+                )
+                line_bboxes.append(expanded_bbox)
+            
+            # 检查每对线段
+            num_lines = len(lines)
+            for i in range(num_lines):
+                # 获取当前线段和其扩展边界框
+                line1 = lines[i]
+                bbox1 = line_bboxes[i]
+                
+                # 获取线段1的端点
+                coords1 = list(line1.coords)
+                p1_start, p1_end = coords1[0], coords1[-1]
+                
+                for j in range(i + 1, num_lines):
+                    # 获取另一线段和其边界框
+                    line2 = lines[j]
+                    bbox2 = line_bboxes[j]
+                    
+                    # 边界框快速预检查：如果扩展边界框不相交，则跳过
+                    if (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or 
+                        bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3]):
+                        continue
+                    
+                    # 获取线段2的端点
+                    coords2 = list(line2.coords)
+                    p2_start, p2_end = coords2[0], coords2[-1]
+                    
+                    # 快速检查线段是否相邻（有公共点）
+                    is_adjacent = False
+                    if (p1_start == p2_start or p1_start == p2_end or 
+                        p1_end == p2_start or p1_end == p2_end):
+                        is_adjacent = True
+                    if is_adjacent:
+                        continue
+                    
+                    # 计算两条线段之间的距离
+                    distance = line1.distance(line2)
+                    
+                    # 如果距离大于等于阈值，跳过
+                    if distance >= distance_threshold:
+                        continue
+                    
+                    # 计算两条线段的平行重叠长度
+                    overlap_length1 = get_parallel_overlap_length(line1, line2, distance_threshold)
+                    overlap_length2 = get_parallel_overlap_length(line2, line1, distance_threshold)
+                    
+                    # 取两条线段中较大的重叠长度
+                    max_overlap_length = max(overlap_length1, overlap_length2)
+                    
+                    # 如果平行重叠长度超过阈值，记录这对线段
+                    if max_overlap_length >= length_threshold:
+                        tadpole_lines.append((distance, line1))
+                        tadpole_lines.append((distance, line2))
+                        # 找到一对符合条件的线段后，可以考虑提前终止当前图斑的检查
+                        break
+        elif isinstance(geometry, MultiPolygon):
+            # 对每个多边形进行检查
+            for poly in geometry.geoms:
+                tadpole_lines.extend(self._check_tadpole(poly))
+        
+        return tadpole_lines
+    
 
 
 class FeatureCheckFunction(BaseFunction):
@@ -528,6 +721,13 @@ class FeatureCheckFunction(BaseFunction):
         self.sharp_angle_check = SwitchButton(self)  # 只显示开关，不包含文本
         check_layout.addWidget(self.sharp_angle_check, 0, 7, Qt.AlignmentFlag.AlignLeft)
         
+        # 蝌蚪形图斑检查
+        tadpole_label = QLabel("蝌蚪形图斑检查：")
+        check_layout.addWidget(tadpole_label, 0, 8, Qt.AlignmentFlag.AlignRight)
+        
+        self.tadpole_check = SwitchButton(self)  # 只显示开关，不包含文本
+        check_layout.addWidget(self.tadpole_check, 0, 9, Qt.AlignmentFlag.AlignLeft)
+        
         # 创建一个容器来容纳所有阈值控件，初始隐藏
         self.all_thresholds_container = QWidget()
         all_thresholds_layout = QHBoxLayout(self.all_thresholds_container)
@@ -537,7 +737,7 @@ class FeatureCheckFunction(BaseFunction):
         # 狭长阈值控件
         self.threshold_container = QWidget()
         threshold_layout = QHBoxLayout(self.threshold_container)
-        threshold_layout.setSpacing(10)  # 设置适当间距
+        threshold_layout.setSpacing(15)  # 增加间距
         threshold_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         
         self.narrow_threshold_label = QLabel("狭长阈值：")
@@ -550,10 +750,14 @@ class FeatureCheckFunction(BaseFunction):
         self.narrow_threshold_slider.setValue(20)  # 默认0.2
         self.narrow_threshold_slider.setTickInterval(5)
         self.narrow_threshold_slider.setSingleStep(1)
+        # 设置滑块宽度和样式
+        self.narrow_threshold_slider.setMinimumWidth(300)  # 加宽滑块
+        self.narrow_threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)  # 添加刻度
         self.narrow_threshold_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         threshold_layout.addWidget(self.narrow_threshold_slider, 1, Qt.AlignmentFlag.AlignCenter)
         
         self.narrow_threshold_value = QLabel("0.2")
+        self.narrow_threshold_value.setStyleSheet("QLabel { font-weight: bold; }")  # 加粗显示数值
         threshold_layout.addWidget(self.narrow_threshold_value, 0, Qt.AlignmentFlag.AlignLeft)
         
         self.threshold_container.setVisible(False)
@@ -562,7 +766,7 @@ class FeatureCheckFunction(BaseFunction):
         # 尖锐角阈值控件
         self.sharp_angle_threshold_container = QWidget()
         sharp_angle_threshold_layout = QHBoxLayout(self.sharp_angle_threshold_container)
-        sharp_angle_threshold_layout.setSpacing(10)  # 设置适当间距
+        sharp_angle_threshold_layout.setSpacing(15)  # 增加间距
         sharp_angle_threshold_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         
         self.sharp_angle_threshold_label = QLabel("尖锐角阈值（度）：")
@@ -575,17 +779,67 @@ class FeatureCheckFunction(BaseFunction):
         self.sharp_angle_threshold_slider.setValue(30)  # 默认30度
         self.sharp_angle_threshold_slider.setTickInterval(5)
         self.sharp_angle_threshold_slider.setSingleStep(1)
+        # 设置滑块宽度和样式，与修复角度阈值滑块保持一致
+        self.sharp_angle_threshold_slider.setMinimumWidth(300)  # 加宽滑块
+        self.sharp_angle_threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)  # 添加刻度
         self.sharp_angle_threshold_slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         sharp_angle_threshold_layout.addWidget(self.sharp_angle_threshold_slider, 1, Qt.AlignmentFlag.AlignCenter)
         
         self.sharp_angle_threshold_value = QLabel("30")
+        self.sharp_angle_threshold_value.setStyleSheet("QLabel { font-weight: bold; }")  # 加粗显示数值
         sharp_angle_threshold_layout.addWidget(self.sharp_angle_threshold_value, 0, Qt.AlignmentFlag.AlignLeft)
         
         self.sharp_angle_threshold_container.setVisible(False)
         all_thresholds_layout.addWidget(self.sharp_angle_threshold_container)
         
+        # 蝌蚪形图斑距离阈值控件
+        self.tadpole_distance_threshold_container = QWidget()
+        tadpole_distance_threshold_layout = QHBoxLayout(self.tadpole_distance_threshold_container)
+        tadpole_distance_threshold_layout.setSpacing(15)  # 增加间距
+        tadpole_distance_threshold_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        self.tadpole_distance_threshold_label = QLabel("距离阈值：")
+        tadpole_distance_threshold_layout.addWidget(self.tadpole_distance_threshold_label, 0, Qt.AlignmentFlag.AlignRight)
+        
+        # 使用 SpinBox 替代 Slider，与面消除功能面积阈值样式保持一致
+        self.tadpole_distance_threshold_spinbox = SpinBox(self)
+        self.tadpole_distance_threshold_spinbox.setFixedWidth(150)
+        self.tadpole_distance_threshold_spinbox.setRange(0, 1000)
+        self.tadpole_distance_threshold_spinbox.setValue(1)
+        self.tadpole_distance_threshold_spinbox.setSingleStep(0.1)
+        self.tadpole_distance_threshold_spinbox.setSuffix(' 米')
+        self.tadpole_distance_threshold_spinbox.setToolTip('设置距离阈值，小于该值的图斑将被检测为蝌蚪形')
+        self.tadpole_distance_threshold_spinbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tadpole_distance_threshold_layout.addWidget(self.tadpole_distance_threshold_spinbox, 1, Qt.AlignmentFlag.AlignCenter)
+        
+        self.tadpole_distance_threshold_container.setVisible(False)
+        all_thresholds_layout.addWidget(self.tadpole_distance_threshold_container)
+        
+        # 蝌蚪形图斑长度阈值控件
+        self.tadpole_length_threshold_container = QWidget()
+        tadpole_length_threshold_layout = QHBoxLayout(self.tadpole_length_threshold_container)
+        tadpole_length_threshold_layout.setSpacing(15)  # 增加间距
+        tadpole_length_threshold_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        self.tadpole_length_threshold_label = QLabel("长度阈值：")
+        tadpole_length_threshold_layout.addWidget(self.tadpole_length_threshold_label, 0, Qt.AlignmentFlag.AlignRight)
+        
+        # 使用 SpinBox 替代 Slider，与面消除功能面积阈值样式保持一致
+        self.tadpole_length_threshold_spinbox = SpinBox(self)
+        self.tadpole_length_threshold_spinbox.setFixedWidth(150)
+        self.tadpole_length_threshold_spinbox.setRange(0, 1000)
+        self.tadpole_length_threshold_spinbox.setValue(1)
+        self.tadpole_length_threshold_spinbox.setSingleStep(0.1)
+        self.tadpole_length_threshold_spinbox.setSuffix(' 米')
+        self.tadpole_length_threshold_spinbox.setToolTip('设置长度阈值，大于该值的图斑将被检测为蝌蚪形')
+        self.tadpole_length_threshold_spinbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tadpole_length_threshold_layout.addWidget(self.tadpole_length_threshold_spinbox, 1, Qt.AlignmentFlag.AlignCenter)
+        
+        self.tadpole_length_threshold_container.setVisible(False)
+        all_thresholds_layout.addWidget(self.tadpole_length_threshold_container)
+        
         # 跨所有列居中显示，使用最大宽度
-        check_layout.addWidget(self.all_thresholds_container, 1, 0, 1, 8, Qt.AlignmentFlag.AlignCenter)
+        check_layout.addWidget(self.all_thresholds_container, 1, 0, 1, 10, Qt.AlignmentFlag.AlignCenter)
         
         # 连接信号
         # SwitchButton使用checkedChanged信号而不是toggled
@@ -596,8 +850,11 @@ class FeatureCheckFunction(BaseFunction):
         self.sharp_angle_check.checkedChanged.connect(self._on_sharp_angle_check_changed)
         self.sharp_angle_threshold_slider.valueChanged.connect(self._on_sharp_angle_threshold_slider_changed)
         
+        # 蝌蚪形图斑检查信号连接
+        self.tadpole_check.checkedChanged.connect(self._on_tadpole_check_changed)
+        
         # 设置列拉伸，确保均匀分布
-        for i in range(8):
+        for i in range(10):
             check_layout.setColumnStretch(i, 1)
         
         # 执行区域
@@ -756,6 +1013,12 @@ class FeatureCheckFunction(BaseFunction):
         # 直接显示角度值
         self.sharp_angle_threshold_value.setText(f"{value}")
     
+    def _on_tadpole_check_changed(self, checked):
+        """蝌蚪形图斑检查开关状态变化时的处理"""
+        # 显示/隐藏阈值容器
+        self.tadpole_distance_threshold_container.setVisible(checked)
+        self.tadpole_length_threshold_container.setVisible(checked)
+    
 
     
     def _execute_check(self):
@@ -790,6 +1053,14 @@ class FeatureCheckFunction(BaseFunction):
             # 从滑块获取尖锐角阈值
             sharp_angle_threshold = self.sharp_angle_threshold_slider.value()
             check_params['sharp_angle_threshold'] = sharp_angle_threshold
+        if hasattr(self, 'tadpole_check') and self.tadpole_check.isChecked():
+            self.check_items.append('tadpole')
+            # 从SpinBox获取距离阈值
+            distance_threshold = self.tadpole_distance_threshold_spinbox.value()
+            check_params['tadpole_distance_threshold'] = distance_threshold
+            # 从SpinBox获取长度阈值
+            length_threshold = self.tadpole_length_threshold_spinbox.value()
+            check_params['tadpole_length_threshold'] = length_threshold
         
         if not self.check_items:
             InfoBar.warning(
@@ -1133,8 +1404,27 @@ class FeatureCheckFunction(BaseFunction):
                                     except:
                                         pass
                             
+                            # 清理字段名，确保只包含ASCII字符且不超过10个字符
+                            def clean_field_names(gdf):
+                                import re
+                                cleaned_gdf = gdf.copy()
+                                new_columns = {}
+                                for col in cleaned_gdf.columns:
+                                    if col == 'geometry':
+                                        continue
+                                    # 移除中文字符，只保留ASCII字符
+                                    cleaned_col = re.sub(r'[^\x00-\x7F]+', '_', col)
+                                    # 替换特殊字符为下划线
+                                    cleaned_col = re.sub(r'[^a-zA-Z0-9_]', '_', cleaned_col)
+                                    # 限制长度为10个字符
+                                    cleaned_col = cleaned_col[:10]
+                                    new_columns[col] = cleaned_col
+                                return cleaned_gdf.rename(columns=new_columns)
+                            
+                            # 清理字段名
+                            gdf_cleaned = clean_field_names(gdf_copy)
                             # 保存为SHP文件，使用GBK编码处理中文文件名
-                            gdf_copy.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
+                            gdf_cleaned.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
             else:
                 # 单文件检测结果保存
                 base_name = os.path.splitext(os.path.basename(self.file_edit.text()))[0]
@@ -1157,8 +1447,27 @@ class FeatureCheckFunction(BaseFunction):
                             except:
                                 pass
                     
+                    # 清理字段名，确保只包含ASCII字符且不超过10个字符
+                    def clean_field_names(gdf):
+                        import re
+                        cleaned_gdf = gdf.copy()
+                        new_columns = {}
+                        for col in cleaned_gdf.columns:
+                            if col == 'geometry':
+                                continue
+                            # 移除中文字符，只保留ASCII字符
+                            cleaned_col = re.sub(r'[^\x00-\x7F]+', '_', col)
+                            # 替换特殊字符为下划线
+                            cleaned_col = re.sub(r'[^a-zA-Z0-9_]', '_', cleaned_col)
+                            # 限制长度为10个字符
+                            cleaned_col = cleaned_col[:10]
+                            new_columns[col] = cleaned_col
+                        return cleaned_gdf.rename(columns=new_columns)
+                    
+                    # 清理字段名
+                    gdf_cleaned = clean_field_names(gdf_copy)
                     # 保存为SHP文件，使用GBK编码处理中文文件名
-                    gdf_copy.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
+                    gdf_cleaned.to_file(output_path, driver='ESRI Shapefile', encoding='gbk')
             
             InfoBar.success(
                 title="成功",

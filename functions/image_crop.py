@@ -12,15 +12,50 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QLabel, QHBoxLayout, QVBoxLayout
+from PyQt6.QtWidgets import QFileDialog, QLabel, QHBoxLayout, QVBoxLayout, QGroupBox, QHeaderView, QTableWidgetItem, QWidget, QFrame
 from qfluentwidgets import (
-    ComboBox, LineEdit, PrimaryPushButton, ProgressBar, 
-    SpinBox, TextEdit, TransparentPushButton, MessageBox, InfoBar
+    ComboBox, LineEdit, PushButton, ProgressBar, 
+    SpinBox, TextEdit, TransparentPushButton, MessageBox, InfoBar, TableWidget
 )
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import StateToolTip
 from .base_function import BaseFunction
 import geopandas as gpd
+
+
+class DragDropTableWidget(TableWidget):
+    """支持拖拽的表格组件"""
+    
+    def __init__(self, parent=None, add_callback=None):
+        super().__init__(parent)
+        self.add_callback = add_callback
+        self.setAcceptDrops(True)
+        self.setDragDropMode(TableWidget.DragDropMode.DropOnly)
+    
+    def dragEnterEvent(self, e):
+        if e and e.mimeData() and e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        elif e:
+            e.ignore()
+    
+    def dragMoveEvent(self, e):
+        if e and e.mimeData() and e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        elif e:
+            e.ignore()
+    
+    def dropEvent(self, e):
+        if e and e.mimeData() and e.mimeData().hasUrls():
+            files = []
+            for url in e.mimeData().urls():
+                file_path = url.toLocalFile()
+                if file_path.lower().endswith(('.tif', '.tiff', '.img')):
+                    files.append(file_path)
+            if files and self.add_callback:
+                self.add_callback(files)
+            e.acceptProposedAction()
+        elif e:
+            e.ignore()
 
 
 class CropThread(QThread):
@@ -99,8 +134,7 @@ class ImageCropFunction(BaseFunction):
     def __init__(self, parent=None):
         description = (
             "📢 <b>功能说明：</b><br>"
-            "根据矢量范围裁剪影像<br>"
-            "完整功能已实现"
+            "根据矢量范围裁剪影像，支持批量裁剪和单一裁剪模式，可设置缓冲距离"
         )
         super().__init__("影像裁剪功能", description, parent)
         
@@ -109,81 +143,105 @@ class ImageCropFunction(BaseFunction):
         self._crop_vector_full_path = ""
         self._crop_output_dir_full = ""
         self.stateTooltip = None
+        # 初始化影像列表
+        self.image_files = []
         self._initUI()
     
     def _initUI(self):
         """初始化界面"""
-        # 第一行：说明标签
-        infoLabel = QLabel(
-            "📢 <span style='color: orange; font-weight: bold;'>功能说明：</span>"
-            "<br>1. <b>批量裁剪</b>：根据矢量字段的所有唯一值进行裁剪，每个值生成一个影像文件"
-            "<br>2. <b>单一裁剪</b>：根据指定的字段值进行裁剪，只生成一个影像文件"
-            "<br>3. 支持多影像文件批量处理（.tif, .tiff, .img等格式）"
-            "<br>4. <b>坐标系要求</b>：影像和矢量必须使用投影坐标系，不支持经纬度坐标系"
-            "<br>5. 自动处理坐标系不一致的情况"
-            "<br>6. 支持设置缓冲距离进行裁剪"
-            "<br>7. 输出文件命名格式：原文件名_字段名_字段值.tif"
-        )
-        infoLabel.setWordWrap(True)
-        infoLabel.setStyleSheet('''
-            QLabel {
-                padding: 10px 0 18px 0;
-                font-size: 13px;
-                line-height: 1.5;
-            }
-        ''')
-        self.contentLayout.addWidget(infoLabel)
+        # 移除重复的功能说明标签，只保留父类传递的功能说明
         
-        # 第二行：影像文件选择
-        imageRow = QHBoxLayout()
-        imageRow.setSpacing(12)
-        label_image = QLabel("影像文件：")
-        label_image.setFixedWidth(60)
+        # 输入设置区域 - 合并影像和矢量设置，调整为更紧凑的布局
+        input_group = QGroupBox("输入设置", self)
+        input_layout = QVBoxLayout(input_group)
+        input_layout.setSpacing(12)
+        input_layout.setContentsMargins(15, 15, 15, 15)
         
-        crop_image_btn = TransparentPushButton(self.tr('选择'), self, FIF.DOCUMENT)
-        crop_image_btn.setFixedHeight(32)
-        crop_image_btn.clicked.connect(self._on_crop_image_btn)
+        # 影像文件表格 - 替换原来的简单选择
+        self.imageTable = DragDropTableWidget(self, self._add_images_to_table)
+        self.imageTable.setColumnCount(5)
+        self.imageTable.setHorizontalHeaderLabels(['路径', '坐标系', '分度带', '波段', '分辨率'])
+        # 加高列表
+        self.imageTable.setFixedHeight(200)
         
-        crop_multi_image_btn = TransparentPushButton(self.tr('多选'), self, FIF.DOCUMENT)
-        crop_multi_image_btn.setFixedHeight(32)
-        crop_multi_image_btn.setToolTip("选择多个影像文件")
-        crop_multi_image_btn.clicked.connect(self._on_crop_multi_image_btn)
+        # 设置表格属性：内容不换行，显示省略号
+        self.imageTable.setWordWrap(False)
+        self.imageTable.setTextElideMode(Qt.TextElideMode.ElideMiddle)  # 设置文本省略方式为中间省略
         
-        self.crop_image_path_label = QLabel("")
-        self.crop_image_path_label.setStyleSheet("color: #888;")
-        self.crop_image_path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.crop_image_path_label.setMinimumWidth(180)
-        self.crop_image_path_label.setMaximumWidth(320)
-        self.crop_image_path_label.setToolTip("影像文件路径")
-        self.crop_image_path_label.setFixedHeight(32)
+        # 设置列宽策略：表格匹配页面宽度，列宽相对固定
+        header = self.imageTable.horizontalHeader()
+        if header:
+            # 表格整体适应页面宽度
+            self.imageTable.horizontalHeader().setStretchLastSection(False)
+            
+            # 设置各列的宽度分配：路径列拉伸，其他列固定宽度
+            # 使用ResizeMode.Interactive允许用户手动调整，但初始宽度固定
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # 路径列拉伸，适应页面宽度
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # 坐标系列
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # 分度带列
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)  # 波段列
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)  # 分辨率列
+            
+            # 设置初始固定宽度
+            header.resizeSection(1, 120)  # 坐标系列
+            header.resizeSection(2, 150)  # 分度带列
+            header.resizeSection(3, 60)   # 波段列
+            header.resizeSection(4, 100)  # 分辨率列
         
-        imageRow.addWidget(label_image)
-        imageRow.addWidget(crop_image_btn)
-        imageRow.addWidget(crop_multi_image_btn)
-        imageRow.addWidget(self.crop_image_path_label)
-        imageRow.addStretch(1)
-        self.contentLayout.addLayout(imageRow)
+        # 设置行高
+        self.imageTable.verticalHeader().setDefaultSectionSize(30)
         
-        # 第三行：矢量文件选择
-        vectorRow = QHBoxLayout()
-        vectorRow.setSpacing(12)
+        # 设置样式
+        self.imageTable.setAlternatingRowColors(True)
+        self.imageTable.setBorderVisible(True)
+        
+        input_layout.addWidget(self.imageTable)
+        
+        # 添加和移除影像文件按钮
+        buttons_layout = QHBoxLayout()
+        self.crop_multi_image_btn = PushButton("选择影像", self, FIF.ADD)
+        self.crop_multi_image_btn.setFixedHeight(32)
+        self.crop_multi_image_btn.setFixedWidth(120)
+        self.crop_multi_image_btn.setToolTip("选择一个或多个影像文件")
+        self.crop_multi_image_btn.clicked.connect(self._on_crop_multi_image_btn)
+        
+        # 移除选中影像按钮
+        self.remove_image_btn = PushButton("移除选中", self, FIF.DELETE)
+        self.remove_image_btn.setFixedHeight(32)
+        self.remove_image_btn.setFixedWidth(120)
+        self.remove_image_btn.setToolTip("移除选中的影像文件")
+        self.remove_image_btn.clicked.connect(self._on_remove_image)
+        
+        buttons_layout.addWidget(self.crop_multi_image_btn)
+        buttons_layout.addWidget(self.remove_image_btn)
+        buttons_layout.addStretch(1)
+        input_layout.addLayout(buttons_layout)
+        
+        # 矢量文件选择部分
+        vector_part_layout = QHBoxLayout()
+        vector_part_layout.setSpacing(12)
         label_vector = QLabel("矢量文件：")
-        label_vector.setFixedWidth(60)
+        label_vector.setFixedWidth(80)
+        label_vector.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
-        crop_vector_btn = TransparentPushButton(self.tr('选择'), self, FIF.DOCUMENT)
-        crop_vector_btn.setFixedHeight(32)
-        crop_vector_btn.clicked.connect(self._on_crop_vector_btn)
+        self.crop_vector_btn = PushButton("选择矢量", self, FIF.DOCUMENT)
+        self.crop_vector_btn.setFixedHeight(32)
+        self.crop_vector_btn.setFixedWidth(120)
+        self.crop_vector_btn.clicked.connect(self._on_crop_vector_btn)
         
         self.crop_vector_path_label = QLabel("")
-        self.crop_vector_path_label.setStyleSheet("color: #888;")
+        self.crop_vector_path_label.setStyleSheet("color: #888; border: 1px solid #ddd; padding: 6px 10px; border-radius: 4px;")
         self.crop_vector_path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.crop_vector_path_label.setMinimumWidth(180)
-        self.crop_vector_path_label.setMaximumWidth(320)
+        self.crop_vector_path_label.setMinimumWidth(200)
+        # 移除最大宽度限制，让标签能够根据面板宽度自动调整
+        # self.crop_vector_path_label.setMaximumWidth(300)
         self.crop_vector_path_label.setToolTip("矢量文件路径")
         self.crop_vector_path_label.setFixedHeight(32)
+        self.crop_vector_path_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         
         label_vector_field = QLabel("字段：")
         label_vector_field.setFixedWidth(40)
+        label_vector_field.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.crop_vector_field_cb = ComboBox(self)
         self.crop_vector_field_cb.setPlaceholderText("选择裁剪字段")
@@ -191,19 +249,23 @@ class ImageCropFunction(BaseFunction):
         self.crop_vector_field_cb.setFixedHeight(32)
         self.crop_vector_field_cb.setEnabled(False)
         
-        vectorRow.addWidget(label_vector)
-        vectorRow.addWidget(crop_vector_btn)
-        vectorRow.addWidget(self.crop_vector_path_label)
-        vectorRow.addWidget(label_vector_field)
-        vectorRow.addWidget(self.crop_vector_field_cb)
-        vectorRow.addStretch(1)
-        self.contentLayout.addLayout(vectorRow)
+        vector_part_layout.addWidget(label_vector)
+        vector_part_layout.addWidget(self.crop_vector_btn)
+        vector_part_layout.addWidget(self.crop_vector_path_label, 1)
+        vector_part_layout.addWidget(label_vector_field)
+        vector_part_layout.addWidget(self.crop_vector_field_cb)
+        input_layout.addLayout(vector_part_layout)
         
-        # 第四行：裁剪模式选择
-        modeRow = QHBoxLayout()
-        modeRow.setSpacing(12)
+        # 裁剪参数设置区域
+        params_group = QGroupBox("裁剪参数设置", self)
+        params_layout = QHBoxLayout(params_group)
+        params_layout.setSpacing(12)
+        params_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # 裁剪模式选择
         label_mode = QLabel("裁剪模式：")
-        label_mode.setFixedWidth(60)
+        label_mode.setFixedWidth(80)
+        label_mode.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.crop_mode_combo = ComboBox(self)
         self.crop_mode_combo.addItems(["批量裁剪", "单一裁剪"])
@@ -213,16 +275,19 @@ class ImageCropFunction(BaseFunction):
         self.crop_mode_combo.currentTextChanged.connect(self._on_mode_changed)
         
         label_value = QLabel("字段值：")
-        label_value.setFixedWidth(50)
+        label_value.setFixedWidth(60)
+        label_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.crop_field_value_edit = LineEdit(self)
         self.crop_field_value_edit.setPlaceholderText("输入要裁剪的字段值")
-        self.crop_field_value_edit.setFixedWidth(150)
+        self.crop_field_value_edit.setFixedWidth(120)
         self.crop_field_value_edit.setFixedHeight(32)
         self.crop_field_value_edit.setEnabled(False)
         
+        # 缓冲距离
         label_buffer = QLabel("缓冲距离：")
-        label_buffer.setFixedWidth(60)
+        label_buffer.setFixedWidth(80)
+        label_buffer.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.crop_buffer_spin = SpinBox(self)
         self.crop_buffer_spin.setRange(0, 10000)
@@ -232,88 +297,116 @@ class ImageCropFunction(BaseFunction):
         self.crop_buffer_spin.setFixedHeight(32)
         self.crop_buffer_spin.setToolTip("设置缓冲距离，0表示不缓冲")
         
-        modeRow.addWidget(label_mode)
-        modeRow.addWidget(self.crop_mode_combo)
-        modeRow.addWidget(label_value)
-        modeRow.addWidget(self.crop_field_value_edit)
-        modeRow.addWidget(label_buffer)
-        modeRow.addWidget(self.crop_buffer_spin)
-        modeRow.addStretch(1)
-        self.contentLayout.addLayout(modeRow)
-        
-        # 裁剪方式选择
-        cropMethodRow = QHBoxLayout()
-        cropMethodRow.setSpacing(12)
+        # 裁剪方式
         label_crop_method = QLabel("裁剪方式：")
-        label_crop_method.setFixedWidth(60)
+        label_crop_method.setFixedWidth(80)
+        label_crop_method.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.crop_method_combo = ComboBox(self)
         self.crop_method_combo.addItems(["按要素边界裁剪", "按要素最大矩形框边界裁剪"])
-        self.crop_method_combo.setCurrentIndex(1)
-        self.crop_method_combo.setFixedWidth(200)
+        self.crop_method_combo.setCurrentIndex(0)
+        self.crop_method_combo.setFixedWidth(180)
         self.crop_method_combo.setFixedHeight(32)
         
-        cropMethodRow.addWidget(label_crop_method)
-        cropMethodRow.addWidget(self.crop_method_combo)
-        cropMethodRow.addStretch(1)
-        self.contentLayout.addLayout(cropMethodRow)
+        # 将所有裁剪参数组件添加到一行
+        params_layout.addWidget(label_mode)
+        params_layout.addWidget(self.crop_mode_combo)
+        params_layout.addWidget(label_value)
+        params_layout.addWidget(self.crop_field_value_edit)
+        params_layout.addWidget(label_buffer)
+        params_layout.addWidget(self.crop_buffer_spin)
+        params_layout.addWidget(label_crop_method)
+        params_layout.addWidget(self.crop_method_combo)
         
-        # 第五行：输出目录设置
+        # 输出设置区域
+        output_group = QGroupBox("输出设置", self)
+        output_layout = QVBoxLayout(output_group)
+        output_layout.setSpacing(12)
+        output_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # 输出目录和格式设置（单行，包含执行按钮）
         outputRow = QHBoxLayout()
         outputRow.setSpacing(12)
-        label_output_dir = QLabel("输出目录：")
-        label_output_dir.setFixedWidth(60)
         
-        crop_output_dir_btn = TransparentPushButton(self.tr('选择'), self, FIF.FOLDER)
-        crop_output_dir_btn.setFixedHeight(32)
-        crop_output_dir_btn.clicked.connect(self._on_crop_output_dir_btn)
+        # 输出目录
+        label_output_dir = QLabel("输出目录：")
+        label_output_dir.setFixedWidth(80)
+        label_output_dir.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        
+        self.crop_output_dir_btn = PushButton(self.tr('选择目录'), self, FIF.FOLDER)
+        self.crop_output_dir_btn.setFixedHeight(32)
+        self.crop_output_dir_btn.setFixedWidth(120)
+        self.crop_output_dir_btn.clicked.connect(self._on_crop_output_dir_btn)
         
         self.crop_output_dir_label = QLabel("")
-        self.crop_output_dir_label.setStyleSheet("color: #888;")
+        self.crop_output_dir_label.setStyleSheet("color: #888; border: 1px solid #ddd; padding: 6px 10px; border-radius: 4px;")
         self.crop_output_dir_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.crop_output_dir_label.setMinimumWidth(180)
-        self.crop_output_dir_label.setMaximumWidth(320)
+        self.crop_output_dir_label.setMinimumWidth(200)
+        # 移除最大宽度限制，让标签能够根据面板宽度自动调整
+        # self.crop_output_dir_label.setMaximumWidth(400)
         self.crop_output_dir_label.setToolTip("输出目录路径")
         self.crop_output_dir_label.setFixedHeight(32)
+        self.crop_output_dir_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        
+        # 输出格式
+        label_output_format = QLabel("输出格式：")
+        label_output_format.setFixedWidth(80)
+        label_output_format.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        
+        self.output_format_combo = ComboBox(self)
+        self.output_format_combo.addItems(["tif", "img"])
+        self.output_format_combo.setCurrentIndex(0)
+        self.output_format_combo.setFixedWidth(100)
+        self.output_format_combo.setFixedHeight(32)
+        
+        # 开始裁剪按钮
+        self.crop_run_btn = PushButton(self.tr('开始裁剪'), self, FIF.SEND)
+        self.crop_run_btn.setFixedWidth(120)
+        self.crop_run_btn.setFixedHeight(36)
+        self.crop_run_btn.clicked.connect(self.execute)
         
         outputRow.addWidget(label_output_dir)
-        outputRow.addWidget(crop_output_dir_btn)
-        outputRow.addWidget(self.crop_output_dir_label)
-        outputRow.addStretch(1)
-        self.contentLayout.addLayout(outputRow)
+        outputRow.addWidget(self.crop_output_dir_btn)
+        outputRow.addWidget(self.crop_output_dir_label, 1)
+        outputRow.addWidget(label_output_format)
+        outputRow.addWidget(self.output_format_combo)
+        outputRow.addWidget(self.crop_run_btn)
+        output_layout.addLayout(outputRow)
         
-        # 第六行：进度条和日志显示
-        progressLogLayout = QVBoxLayout()
-        progressLogLayout.setSpacing(10)
+        # 进度条容器
+        self.progress_container = QWidget(self)
+        self.progress_layout = QVBoxLayout(self.progress_container)
+        self.progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.progress_layout.setSpacing(5)
         
-        self.crop_log_text = TextEdit(self)
-        self.crop_log_text.setReadOnly(True)
-        self.crop_log_text.setFixedHeight(120)
-        # 移除固定宽度，让日志框自适应面板宽度
-        self.crop_log_text.setPlaceholderText("处理日志将显示在这里...")
-        self.crop_log_text.hide()
+        # 进度文本
+        self.progress_text = QLabel("准备开始裁剪...", self)
+        self.progress_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_text.setStyleSheet("QLabel { font-weight: bold; }")
         
-        self.crop_progress = ProgressBar(self)
-        # 移除固定宽度，让进度条自适应面板宽度
-        self.crop_progress.hide()
+        # 进度条
+        self.progress_bar = QFrame(self)
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setStyleSheet("""
+            QFrame {
+                background-color: #e0e0e0;
+                border-radius: 2px;
+            }
+        """)
         
-        progressLogLayout.addWidget(self.crop_log_text)
-        progressLogLayout.addWidget(self.crop_progress)
-        self.contentLayout.addLayout(progressLogLayout)
+        # 将进度文本和进度条添加到容器
+        self.progress_layout.addWidget(self.progress_text)
+        self.progress_layout.addWidget(self.progress_bar)
         
-        # 第七行：执行按钮
-        btnRow = QHBoxLayout()
-        btnRow.setContentsMargins(0, 10, 0, 0)
-        btnRow.addStretch(1)
+        # 设置容器初始不可见
+        self.progress_container.setVisible(False)
         
-        crop_run_btn = PrimaryPushButton(self.tr('开始裁剪'), self, FIF.SEND)
-        crop_run_btn.setFixedWidth(180)
-        crop_run_btn.setFixedHeight(36)
-        crop_run_btn.clicked.connect(self.execute)
-        
-        btnRow.addWidget(crop_run_btn)
-        btnRow.addStretch(1)
-        self.contentLayout.addLayout(btnRow)
+        # 将所有组件添加到内容布局
+        self.contentLayout.addWidget(input_group)
+        self.contentLayout.addWidget(params_group)
+        self.contentLayout.addWidget(output_group)
+        self.contentLayout.addSpacing(20)
+        self.contentLayout.addWidget(self.progress_container)
     
     def _short_path(self, path):
         """缩短路径显示"""
@@ -328,15 +421,108 @@ class ImageCropFunction(BaseFunction):
             self.crop_image_path_label.setText(self._short_path(file_path))
             self.crop_image_path_label.setToolTip(file_path)
             self._crop_image_full_path = file_path
+            # 自动生成输出路径
+            if not self._crop_output_dir_full:
+                self._auto_generate_output_dir(file_path)
     
     def _on_crop_multi_image_btn(self):
         """选择多个影像文件"""
         files, _ = QFileDialog.getOpenFileNames(self, "选择多个影像文件", "", "影像文件 (*.tif *.tiff *.img)")
         if files:
-            file_text = "\n".join(files)
-            self.crop_image_path_label.setText(f"已选择 {len(files)} 个文件")
-            self.crop_image_path_label.setToolTip(file_text)
-            self._crop_image_full_path = file_text
+            self._add_images_to_table(files)
+            # 自动生成输出路径
+            if not self._crop_output_dir_full and files:
+                self._auto_generate_output_dir(files[0])
+    
+    def _add_images_to_table(self, files):
+        """添加影像到表格"""
+        for file_path in files:
+            # 检查是否已存在
+            exists = False
+            for row in range(self.imageTable.rowCount()):
+                item = self.imageTable.item(row, 0)
+                if item and item.text() == file_path:
+                    exists = True
+                    break
+            
+            if not exists:
+                # 读取影像信息
+                try:
+                    # 延迟导入 rasterio，只在实际需要时导入
+                    import rasterio
+                    with rasterio.open(file_path) as src:
+                        try:
+                            crs = src.crs
+                            zone = ''
+                            # 坐标系信息 - 精简显示
+                            if crs:
+                                crs_str = str(crs)
+                                # 精简 CGCS2000 / 3-degree Gauss-Kruger zone 36 为 CGCS2000 3度带36
+                                if 'CGCS2000' in crs_str and '3-degree' in crs_str:
+                                    import re
+                                    zone_match = re.search(r'zone\s+(\d+)', crs_str)
+                                    if zone_match:
+                                        zone_num = zone_match.group(1)
+                                        coord_system = f"CGCS2000 3度带{zone_num}"
+                                    else:
+                                        coord_system = "CGCS2000 3度带"
+                                else:
+                                    coord_system = crs_str.split('/')[0].strip() if '/' in crs_str else crs_str
+                            else:
+                                coord_system = '未知'
+                            if crs and crs.is_projected:
+                                # 优先尝试UTM带
+                                if 'utm_zone' in crs.to_dict():
+                                    zone = str(crs.to_dict()['utm_zone'])
+                                elif 'zone' in crs.to_dict():
+                                    zone = str(crs.to_dict()['zone'])
+                                else:
+                                    # 尝试通过投影中心经线推算3度/6度带号
+                                    proj4 = crs.to_proj4()
+                                    # 只处理常见的投影
+                                    if '+proj=tmerc' in proj4 or '+proj=utm' in proj4:
+                                        # 获取中心经线
+                                        import re
+                                        match = re.search(r'\+lon_0=([\d\.]+)', proj4)
+                                        if match:
+                                            lon_0 = float(match.group(1))
+                                            # 3度带号
+                                            zone3 = int(lon_0 / 3)
+                                            # 6度带号
+                                            zone6 = int(lon_0 / 6)
+                                            zone = f"3度带:{zone3} 6度带:{zone6}"
+                        except Exception:
+                            zone = ''
+                            coord_system = '未知'
+                        bands = str(src.count)
+                        xres = abs(src.transform.a)
+                        yres = abs(src.transform.e)
+                        res_str = f"{xres:.3f} x {yres:.3f}"
+                except Exception as e:
+                    zone = ''
+                    coord_system = '未知'
+                    bands = ''
+                    res_str = ''
+                
+                # 插入新行
+                row = self.imageTable.rowCount()
+                self.imageTable.insertRow(row)
+                self.imageTable.setItem(row, 0, QTableWidgetItem(file_path))
+                self.imageTable.setItem(row, 1, QTableWidgetItem(coord_system))
+                self.imageTable.setItem(row, 2, QTableWidgetItem(str(zone)))
+                self.imageTable.setItem(row, 3, QTableWidgetItem(bands))
+                self.imageTable.setItem(row, 4, QTableWidgetItem(res_str))
+    
+    def _on_remove_image(self):
+        """移除选中的影像文件"""
+        # 获取选中的行
+        selected_rows = set()
+        for index in self.imageTable.selectedIndexes():
+            selected_rows.add(index.row())
+        
+        # 按行号从大到小移除，避免索引混乱
+        for row in sorted(selected_rows, reverse=True):
+            self.imageTable.removeRow(row)
     
     def _on_crop_vector_btn(self):
         """选择矢量文件"""
@@ -350,31 +536,8 @@ class ImageCropFunction(BaseFunction):
                 
                 # 检查坐标系
                 if gdf.crs is None:
-                    # 使用qfluentwidgets的MessageBox组件
-                    msg_box = MessageBox(
-                        '警告',
-                        '矢量文件缺少坐标系信息，请先定义投影。',
-                        self
-                    )
-                    msg_box.exec()
+                    print('矢量文件缺少坐标系信息，请先定义投影。')
                     return
-                
-                if gdf.crs.is_geographic:
-                    # 使用qfluentwidgets的MessageBox组件
-                    msg_box = MessageBox(
-                        '警告',
-                        f'矢量文件使用地理坐标系（经纬度），无法直接进行裁剪。\n'
-                        f'当前坐标系: {gdf.crs}\n'
-                        f'请先将矢量文件投影到投影坐标系。',
-                        self
-                    )
-                    msg_box.exec()
-                    return
-                
-                # 显示坐标系信息
-                crs_info = f"坐标系: {gdf.crs}"
-                if hasattr(gdf.crs, 'to_epsg') and gdf.crs.to_epsg():
-                    crs_info += f" (EPSG:{gdf.crs.to_epsg()})"
                 
                 # 更新字段列表
                 fields = gdf.columns.tolist()
@@ -385,22 +548,8 @@ class ImageCropFunction(BaseFunction):
                 self.crop_vector_field_cb.setCurrentIndex(-1)
                 self.crop_vector_field_cb.setEnabled(True)
                 
-                # 显示成功信息
-                msg_box = MessageBox(
-                    '成功',
-                    f'矢量文件加载成功！\n{crs_info}',
-                    self
-                )
-                msg_box.exec()
-                
             except Exception as e:
-                # 使用qfluentwidgets的MessageBox组件
-                msg_box = MessageBox(
-                    '错误',
-                    f'读取矢量文件失败: {str(e)}',
-                    self
-                )
-                msg_box.exec()
+                print(f'读取矢量文件失败: {str(e)}')
     
     def _on_crop_output_dir_btn(self):
         """选择输出目录"""
@@ -420,9 +569,18 @@ class ImageCropFunction(BaseFunction):
             self.crop_field_value_edit.clear()
             self.crop_field_value_edit.setPlaceholderText("批量裁剪时无需填写")
     
+    def _auto_generate_output_dir(self, input_path):
+        """自动生成输出目录"""
+        dir_name = os.path.dirname(input_path)
+        output_dir = os.path.join(dir_name, "crop_results")
+        self._crop_output_dir_full = output_dir
+        self.crop_output_dir_label.setText(self._short_path(output_dir))
+        self.crop_output_dir_label.setToolTip(output_dir)
+    
     def validate(self) -> tuple[bool, str]:
         """验证输入"""
-        if not self._crop_image_full_path:
+        # 检查表格中是否有影像文件
+        if self.imageTable.rowCount() == 0:
             return False, "请选择影像文件！"
         if not self._crop_vector_full_path or not os.path.exists(self._crop_vector_full_path):
             return False, "请选择有效的矢量文件！"
@@ -444,8 +602,15 @@ class ImageCropFunction(BaseFunction):
         
         self._running = True
         
+        # 从表格中获取影像文件列表
+        image_files = []
+        for row in range(self.imageTable.rowCount()):
+            item = self.imageTable.item(row, 0)
+            if item:
+                image_files.append(item.text())
+        
         # 获取参数
-        image_path = self._crop_image_full_path
+        image_path = "\n".join(image_files)
         vector_path = self._crop_vector_full_path
         field_name = self.crop_vector_field_cb.currentText()
         mode = self.crop_mode_combo.currentText()
@@ -455,13 +620,8 @@ class ImageCropFunction(BaseFunction):
         crop_method = self.crop_method_combo.currentText()
         
         # 如果没有选择输出目录，使用影像文件所在目录
-        if not output_dir:
-            if os.path.isfile(image_path):
-                output_dir = os.path.dirname(image_path)
-            else:
-                # 多文件情况，使用第一个文件的目录
-                first_file = image_path.split('\n')[0].strip()
-                output_dir = os.path.dirname(first_file)
+        if not output_dir and image_files:
+            output_dir = os.path.dirname(image_files[0])
         
         if not os.path.exists(output_dir):
             try:
@@ -471,11 +631,9 @@ class ImageCropFunction(BaseFunction):
                 self._running = False
                 return
         
-        # 显示进度条和日志
-        self.crop_progress.show()
-        self.crop_log_text.show()
-        self.crop_progress.setValue(0)
-        self.crop_log_text.clear()
+        # 显示进度容器
+        self.progress_container.setVisible(True)
+        self.progress_text.setText("准备开始裁剪...")
         self.stateTooltip = StateToolTip('正在运行程序', '客官请耐心等待哦~~', self)
         self.stateTooltip.show()
         
@@ -496,7 +654,6 @@ class ImageCropFunction(BaseFunction):
         
         # 连接信号
         self.crop_thread.progress_update.connect(self._onCropProgress)
-        self.crop_thread.log_update.connect(self._onCropLogUpdate)
         self.crop_thread.success.connect(self._onCropSuccess)
         self.crop_thread.error.connect(self._onCropError)
         self.crop_thread.finished.connect(self._onCropFinished)
@@ -506,17 +663,20 @@ class ImageCropFunction(BaseFunction):
     
     def _onCropProgress(self, progress: int):
         """裁剪进度更新处理"""
-        self.crop_progress.setValue(progress)
-    
-    def _onCropLogUpdate(self, log_text: str):
-        """裁剪日志更新处理"""
-        current_text = self.crop_log_text.toPlainText()
-        new_text = current_text + log_text
-        self.crop_log_text.setText(new_text)
-        # 滚动到底部
-        scrollbar = self.crop_log_text.verticalScrollBar()
-        if scrollbar:
-            scrollbar.setValue(scrollbar.maximum())
+        # 更新进度文本，显示百分比
+        self.progress_text.setText(f"正在裁剪... {progress}%")
+        
+        # 使用字符串拼接方式，避免花括号冲突
+        progress_ratio = progress / 100.0
+        style = """
+            QFrame {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #0078D4, stop:""" + str(progress_ratio) + """ #0078D4, 
+                    stop:""" + str(progress_ratio) + """ #e0e0e0, stop:1 #e0e0e0);
+                border-radius: 2px;
+            }
+        """
+        self.progress_bar.setStyleSheet(style)
     
     def _onCropSuccess(self, result_msg: str):
         """裁剪成功处理"""
@@ -540,8 +700,16 @@ class ImageCropFunction(BaseFunction):
     
     def _onCropFinished(self):
         """裁剪线程结束处理"""
-        self.crop_progress.hide()
-        self.crop_log_text.hide()
+        # 重置进度容器
+        self.progress_container.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QFrame {
+                background-color: #e0e0e0;
+                border-radius: 2px;
+            }
+        """)
+        self.progress_text.setText("准备开始裁剪...")
+        
         if self.stateTooltip:
             try:
                 self.stateTooltip.close()
