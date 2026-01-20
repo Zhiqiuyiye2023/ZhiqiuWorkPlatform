@@ -33,16 +33,17 @@
 
 ## 🚀 快速开始
 
-### 方法一：一键启动（推荐）
+### 方法一：启动主应用
 ```batch
-双击 "启动应用.bat" 文件
-```
-
-### 方法二：命令行启动
-```bash
-cd "c:\知秋工作平台"
 python demo.py
 ```
+
+### 方法二：使用管理工具
+```batch
+双击 "启动管理工具.bat" 文件
+```
+
+管理工具集成了依赖安装、打包等功能，提供可视化界面操作。
 
 ## 📋 系统要求
 
@@ -58,37 +59,22 @@ python demo.py
 
 ### 🔍 检查环境
 
-**方式 1: 使用环境检查脚本（推荐）**
-```bash
-python check_env.py
-```
-这将检查所有依赖包的安装状态和版本。
-
-**方式 2: 手动检查**
+**手动检查**
 ```bash
 pip list | findstr "PyQt6"
 ```
 
 ### 📥 安装依赖
 
-**方式 1: 快速安装核心依赖（推荐新手）**
-```bash
-双击运行 "安装核心依赖.bat"
-```
-或命令行：
-```bash
-pip install PyQt6>=6.7.0 PyQt6-Fluent-Widgets>=1.1.0 PyQt6-Frameless-Window>=0.4.0 darkdetect>=0.8.0 requests>=2.31.0
+**方式 1: 使用管理工具（推荐）**
+```batch
+双击 "启动管理工具.bat" 文件，然后点击 "安装完整依赖" 按钮
 ```
 
-**方式 2: 安装完整依赖**
+**方式 2: 命令行安装**
 ```bash
 pip install -r requirements.txt
 ```
-
-**方式 3: 分模块安装**
-- 安装GIS功能依赖：双击 `安装GIS依赖.bat`
-- 安装文件处理依赖：双击 `安装文件处理依赖.bat`
-- 安装AI功能依赖：双击 `安装AI依赖.bat`（用于YOLO工具箱）
 
 ### ⚠️ 安装注意事项
 
@@ -474,7 +460,11 @@ GIS工作流功能提供了一个类似于FME的拖拽式GIS数据处理环境�
 知秋工作平台/
 ├── 📄 demo.py                    # 主程序入口
 ├── 📄 requirements.txt           # 依赖列表
-├── 📄 requirements_without_yolo.txt # 不含YOLO依赖的精简依赖列表
+├── 📄 LICENSE.txt                # MIT许可证
+├── 📄 README.txt                 # 简单说明文档
+├── 📄 installer.iss              # Inno Setup安装脚本
+├── 📄 manage_tool.py             # 管理工具（依赖安装、打包等）
+├── 📄 启动管理工具.bat           # 启动管理工具的批处理文件
 ├── 📁 interfaces/                # 界面组件目录
 │   ├── 📄 setting_interface.py   # 设置界面
 │   ├── 📄 home_interface.py      # 首页界面
@@ -492,7 +482,6 @@ GIS工作流功能提供了一个类似于FME的拖拽式GIS数据处理环境�
 │   ├── 📄 base_function.py       # 功能基类
 │   ├── 📄 data_overlay.py        # 数据叠加套合
 │   ├── 📄 field_split.py         # 字段分离要素
-│   ├── 📄 area_adjust.py         # 面积调整要素
 │   ├── 📄 merge_features.py      # 合并要素
 │   ├── 📄 dxf_convert.py         # DXF转SHP
 │   ├── 📄 shp_to_kmz.py          # SHP转KMZ
@@ -684,8 +673,8 @@ self.group.addSettingCard(self.newCard)
 ![Docs](https://img.shields.io/badge/Docs-30+-orange)
 ![Tests](https://img.shields.io/badge/Tests-5-yellow)
 
-**最后更新**: 2025-12-04  
-**版本**: v1.0.1  
+**最后更新**: 2026-01-20  
+**版本**: v1.0.2  
 **状态**: ✅ 活跃开发
 
 ---
