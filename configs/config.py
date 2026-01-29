@@ -31,6 +31,19 @@ def isWin11():
     return sys.platform == 'win32' and sys.getwindowsversion().build >= 22000
 
 
+# 从version.json文件中读取版本号
+def get_current_version():
+    import json
+    import os
+    try:
+        version_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'version.json')
+        with open(version_file_path, 'r', encoding='utf-8') as f:
+            version_info = json.load(f)
+        return version_info['version']
+    except Exception as e:
+        # 如果读取失败，使用默认值
+        return "1.0.3"
+
 class Config(QConfig):
     """ Config of application """
 
@@ -45,8 +58,14 @@ class Config(QConfig):
     blurRadius = RangeConfigItem("Material", "AcrylicBlurRadius", 15, RangeValidator(0, 40))
     
     # Version
-    currentVersion = ConfigItem("Version", "CurrentVersion", "1.0.1", None)
-    latestVersion = ConfigItem("Version", "LatestVersion", "1.0.1", None)
+    currentVersion = ConfigItem("Version", "CurrentVersion", get_current_version(), None)
+    latestVersion = ConfigItem("Version", "LatestVersion", get_current_version(), None)
+    
+    # Server
+    serverType = OptionsConfigItem(
+        "Server", "ServerType", "public", OptionsValidator(["local", "public"]), restart=False)
+    localServerUrl = ConfigItem("Server", "LocalServerUrl", "http://127.0.0.1:5000", None)
+    publicServerUrl = ConfigItem("Server", "PublicServerUrl", "https://bream-guided-poodle.ngrok-free.app", None)
 
 
 # 创建全局配置对象

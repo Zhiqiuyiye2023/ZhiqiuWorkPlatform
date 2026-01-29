@@ -121,3 +121,45 @@ class TableDataManager:
         self.fields = []
         self.current_record = None
         self.current_index = -1
+    
+    def save_table(self, file_path: str = None) -> bool:
+        """
+        保存表格数据到文件
+        :param file_path: 保存路径，如果为None则使用加载时的路径
+        :return: 保存成功返回True，失败返回False
+        """
+        try:
+            import openpyxl
+            
+            # 确定保存路径
+            save_path = file_path if file_path else self.file_path
+            if not save_path:
+                return False
+            
+            # 确保执行状态和执行时间字段存在
+            if '执行状态' not in self.fields:
+                self.fields.append('执行状态')
+            if '执行时间' not in self.fields:
+                self.fields.append('执行时间')
+            
+            # 创建工作簿和工作表
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            
+            # 写入表头
+            for col, field in enumerate(self.fields, start=1):
+                sheet.cell(row=1, column=col, value=field)
+            
+            # 写入数据
+            for row, record in enumerate(self.data, start=2):
+                for col, field in enumerate(self.fields, start=1):
+                    value = record.get(field, "")
+                    sheet.cell(row=row, column=col, value=value)
+            
+            # 保存文件
+            workbook.save(save_path)
+            workbook.close()
+            return True
+        except Exception as e:
+            print(f"保存表格文件失败: {e}")
+            return False

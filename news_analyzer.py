@@ -28,7 +28,14 @@ import importlib.util
 # 设置日志记录
 def setup_logging():
     """设置日志记录"""
-    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    # 获取用户可写入的目录，优先使用用户的AppData目录
+    if sys.platform.startswith('win32'):
+        # Windows系统
+        log_dir = os.path.join(os.environ['APPDATA'], '知秋工作平台', 'logs')
+    else:
+        # 其他系统（Linux/macOS）
+        log_dir = os.path.join(os.path.expanduser('~'), '.知秋工作平台', 'logs')
+    
     os.makedirs(log_dir, exist_ok=True)
     
     log_file = os.path.join(log_dir, 'news_analyzer_gui.log')
@@ -62,8 +69,16 @@ class RSSCollector:
         self.sources = []
         self.news_cache = []
         
-        # 设置保存文件路径
-        self.sources_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'news_sources.json')
+        # 设置保存文件路径 - 使用用户可写入目录
+        if sys.platform.startswith('win32'):
+            # Windows系统
+            config_dir = os.path.join(os.environ['APPDATA'], '知秋工作平台', 'configs')
+        else:
+            # 其他系统（Linux/macOS）
+            config_dir = os.path.join(os.path.expanduser('~'), '.知秋工作平台', 'configs')
+        
+        os.makedirs(config_dir, exist_ok=True)
+        self.sources_file = os.path.join(config_dir, 'news_sources.json')
         
         # 创建SSL上下文以处理HTTPS请求
         self.ssl_context = ssl.create_default_context()

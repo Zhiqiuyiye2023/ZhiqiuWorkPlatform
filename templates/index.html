@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知秋工作平台</title>
+    <style>
+        /* 基础样式重置 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* 全局样式 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+
+        /* 容器 */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* 头部样式 */
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+        }
+
+        .nav-links li {
+            margin-left: 2rem;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .nav-links a:hover {
+            color: #e0e0e0;
+        }
+
+        /* 英雄区域 */
+        .hero {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 4rem 0;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        /* 按钮样式 */
+        .btn {
+            display: inline-block;
+            background-color: white;
+            color: #4CAF50;
+            padding: 0.8rem 1.5rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background-color: #e0e0e0;
+            transform: translateY(-2px);
+        }
+
+        /* 功能介绍 */
+        .features {
+            padding: 4rem 0;
+            background-color: white;
+        }
+
+        .features h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #333;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background-color: #f8f9fa;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-card h3 {
+            margin-bottom: 1rem;
+            color: #4CAF50;
+        }
+
+        /* 技术栈 */
+        .tech-stack {
+            padding: 4rem 0;
+            background-color: #f8f9fa;
+        }
+
+        .tech-stack h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #333;
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .tech-item {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 联系信息 */
+        .contact {
+            padding: 4rem 0;
+            background-color: white;
+        }
+
+        .contact h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #333;
+        }
+
+        .contact-info {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* 页脚 */
+        footer {
+            background-color: #333;
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            nav {
+                flex-direction: column;
+            }
+
+            .nav-links {
+                margin-top: 1rem;
+            }
+
+            .nav-links li {
+                margin: 0 1rem;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 状态信息样式 */
+        .status {
+            background-color: #e8f5e8;
+            padding: 2rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+
+        .status h3 {
+            color: #4CAF50;
+            margin-bottom: 1rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-label {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- 头部 -->
+    <header>
+        <div class="container">
+            <nav>
+                <div class="logo">知秋工作平台</div>
+                <ul class="nav-links">
+                    <li><a href="#home">首页</a></li>
+                    <li><a href="#features">功能</a></li>
+                    <li><a href="#tech">技术栈</a></li>
+                    <li><a href="#contact">联系我们</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- 英雄区域 -->
+    <section class="hero" id="home">
+        <div class="container">
+            <h1>欢迎使用知秋工作平台</h1>
+            <p>一个功能强大、易于使用的桌面应用程序，帮助您提高工作效率</p>
+            <a href="#features" class="btn">了解更多</a>
+        </div>
+    </section>
+
+    <!-- 状态信息 -->
+    <section class="status">
+        <div class="container">
+            <h3>服务器状态</h3>
+            <div class="status-item">
+                <span class="status-label">服务状态：</span>
+                <span>正常运行中</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">版本：</span>
+                <span>1.0.3</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">API 状态：</span>
+                <span>可用</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 功能介绍 -->
+    <section class="features" id="features">
+        <div class="container">
+            <h2>主要功能</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>多平台支持</h3>
+                    <p>支持 Windows、macOS 和 Linux 等多种操作系统，满足不同用户的需求。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>强大的功能</h3>
+                    <p>提供丰富的功能模块，包括文件管理、任务管理、数据统计等，帮助您提高工作效率。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>易于使用</h3>
+                    <p>直观的用户界面，简单易用的操作流程，让您快速上手，无需复杂的培训。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>安全可靠</h3>
+                    <p>采用先进的加密技术，保护您的数据安全，让您放心使用。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>灵活扩展</h3>
+                    <p>支持插件扩展，您可以根据自己的需求添加新的功能模块。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>持续更新</h3>
+                    <p>团队持续更新和优化产品，为您提供更好的使用体验。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 技术栈 -->
+    <section class="tech-stack" id="tech">
+        <div class="container">
+            <h2>技术栈</h2>
+            <div class="tech-grid">
+                <div class="tech-item">Python</div>
+                <div class="tech-item">Flask</div>
+                <div class="tech-item">Qt</div>
+                <div class="tech-item">SQLAlchemy</div>
+                <div class="tech-item">PyQt6</div>
+                <div class="tech-item">HTML5</div>
+                <div class="tech-item">CSS3</div>
+                <div class="tech-item">JavaScript</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 联系信息 -->
+    <section class="contact" id="contact">
+        <div class="container">
+            <h2>联系我们</h2>
+            <div class="contact-info">
+                <p>如果您有任何问题或建议，欢迎随时联系我们。</p>
+                <p>邮箱：support@zhiqiu.com</p>
+                <p>电话：400-123-4567</p>
+                <p>地址：北京市朝阳区科技园区</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 知秋工作平台. 保留所有权利.</p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont
 from qfluentwidgets import (ScrollArea, isDarkTheme, CardWidget, PushButton, PrimaryPushButton,
                            LineEdit, ComboBox, TextEdit, ToolButton, FluentIcon as FIF, SwitchButton,
+                           CheckBox,
                            TitleLabel, SubtitleLabel, InfoBar, InfoBarPosition, IndeterminateProgressBar,
                            MessageBox, FluentIconBase)
 from typing import Optional
@@ -42,6 +43,9 @@ class AutomationToolInterface(QWidget):
         self.title_update_timer = QTimer(self)
         self.title_update_timer.setInterval(1000)  # 每秒更新一次
         self.title_update_timer.timeout.connect(self.updateBrowserStatus)
+        
+        # 连接执行结果准备好的信号
+        self.automation_flow.executionResultReady.connect(self.handleExecutionResults)
     
     class ModuleCard(CardWidget):
         """元素模块卡片控件"""
@@ -351,31 +355,38 @@ class AutomationToolInterface(QWidget):
         
         def loadTableFields(self):
             """加载表格字段到下拉框"""
-            # 清空现有选项
-            self.tableFieldCombo.clear()
-            
-            # 获取表格字段
-            # 正确获取AutomationToolInterface实例
-            parent = None
-            current_widget = self.parent()
-            # 向上查找直到找到AutomationToolInterface实例
-            while current_widget and not hasattr(current_widget, 'automation_flow'):
-                current_widget = current_widget.parent()
-            parent = current_widget
-            
-            if parent and hasattr(parent, 'automation_flow'):
-                # 获取表格字段
-                table_fields = parent.automation_flow.table_manager.get_fields()
-                if table_fields:
-                    # 先启用下拉框
-                    self.tableFieldCombo.setEnabled(True)
-                    self.tableFieldCombo.addItems(table_fields)
+            try:
+                self.tableFieldCombo.clear()
+                
+                parent = None
+                current_widget = self.parent()
+                while current_widget:
+                    if hasattr(current_widget, 'automation_flow'):
+                        parent = current_widget
+                        break
+                    current_widget = current_widget.parent()
+                
+                if parent:
+                    try:
+                        table_fields = parent.automation_flow.table_manager.get_fields()
+                        if table_fields:
+                            self.tableFieldCombo.setEnabled(True)
+                            self.tableFieldCombo.addItems(table_fields)
+                        else:
+                            self.tableFieldCombo.addItem("无可用字段")
+                            self.tableFieldCombo.setEnabled(False)
+                    except Exception:
+                        self.tableFieldCombo.addItem("无可用字段")
+                        self.tableFieldCombo.setEnabled(False)
                 else:
                     self.tableFieldCombo.addItem("无可用字段")
                     self.tableFieldCombo.setEnabled(False)
-            else:
-                self.tableFieldCombo.addItem("无可用字段")
-                self.tableFieldCombo.setEnabled(False)
+            except Exception:
+                # 发生错误时，确保控件状态正确
+                if hasattr(self, 'tableFieldCombo'):
+                    self.tableFieldCombo.clear()
+                    self.tableFieldCombo.addItem("无可用字段")
+                    self.tableFieldCombo.setEnabled(False)
         
 
 
@@ -482,11 +493,7 @@ class AutomationToolInterface(QWidget):
             self.module_id = module.module_id
             self.setObjectName(f"conditionCard_{self.module_id}")
             self.setupUI()
-            # 延迟加载表格字段和获取文本变量，确保模块已经被添加到列表中
-            QTimer.singleShot(100, self.delayedLoad)
-        
-        def delayedLoad(self):
-            """延迟加载表格字段和获取文本变量"""
+            # 直接加载表格字段和获取文本变量，避免打包环境下的定时器问题
             self.loadTableFields()
             self.loadTextVariables()
         
@@ -710,23 +717,19 @@ class AutomationToolInterface(QWidget):
         
         def loadTableFields(self):
             """加载表格字段到下拉框"""
-            # 清空现有选项
             self.tableFieldCombo.clear()
             
-            # 获取表格字段
-            # 正确获取AutomationToolInterface实例
             parent = None
             current_widget = self.parent()
-            # 向上查找直到找到AutomationToolInterface实例
-            while current_widget and not hasattr(current_widget, 'automation_flow'):
+            while current_widget:
+                if hasattr(current_widget, 'automation_flow'):
+                    parent = current_widget
+                    break
                 current_widget = current_widget.parent()
-            parent = current_widget
             
-            if parent and hasattr(parent, 'automation_flow'):
-                # 获取表格字段
+            if parent:
                 table_fields = parent.automation_flow.table_manager.get_fields()
                 if table_fields:
-                    # 先启用下拉框
                     self.tableFieldCombo.setEnabled(True)
                     self.tableFieldCombo.addItems(table_fields)
                 else:
@@ -738,45 +741,50 @@ class AutomationToolInterface(QWidget):
         
         def loadTextVariables(self):
             """加载获取文本变量到下拉框"""
-            # 清空现有选项
-            self.variableCombo.clear()
-            
-            # 获取所有获取文本的模块名
-            # 正确获取AutomationToolInterface实例
-            parent = None
-            current_widget = self.parent()
-            # 向上查找直到找到AutomationToolInterface实例
-            while current_widget and not hasattr(current_widget, 'automation_flow'):
-                current_widget = current_widget.parent()
-            parent = current_widget
-            
-            if parent and hasattr(parent, 'automation_flow'):
-                # 获取所有模块
-                modules = parent.automation_flow.module_manager.get_all_modules()
-                # 获取当前条件模块的索引
-                current_index = -1
-                for i, module in enumerate(modules):
-                    if module.module_id == self.module_id:
-                        current_index = i
+            try:
+                self.variableCombo.clear()
+                
+                parent = None
+                current_widget = self.parent()
+                while current_widget:
+                    if hasattr(current_widget, 'automation_flow'):
+                        parent = current_widget
                         break
+                    current_widget = current_widget.parent()
                 
-                # 只添加当前条件模块之前的获取文本模块
-                text_modules = []
-                if current_index >= 0:
-                    for module in modules[:current_index]:
-                        if hasattr(module, 'action_type') and module.action_type == "获取文本":
-                            text_modules.append(module.name)
-                
-                if text_modules:
-                    # 先启用下拉框
-                    self.variableCombo.setEnabled(True)
-                    self.variableCombo.addItems(text_modules)
+                if parent:
+                    try:
+                        modules = parent.automation_flow.module_manager.get_all_modules()
+                        current_index = -1
+                        for i, module in enumerate(modules):
+                            if module.module_id == self.module_id:
+                                current_index = i
+                                break
+                        
+                        text_modules = []
+                        if current_index >= 0:
+                            for module in modules[:current_index]:
+                                if hasattr(module, 'action_type') and module.action_type == "获取文本":
+                                    text_modules.append(module.name)
+                        
+                        if text_modules:
+                            self.variableCombo.setEnabled(True)
+                            self.variableCombo.addItems(text_modules)
+                        else:
+                            self.variableCombo.addItem("无可用获取文本变量")
+                            self.variableCombo.setEnabled(False)
+                    except Exception:
+                        self.variableCombo.addItem("无可用获取文本变量")
+                        self.variableCombo.setEnabled(False)
                 else:
                     self.variableCombo.addItem("无可用获取文本变量")
                     self.variableCombo.setEnabled(False)
-            else:
-                self.variableCombo.addItem("无可用获取文本变量")
-                self.variableCombo.setEnabled(False)
+            except Exception:
+                # 发生错误时，确保控件状态正确
+                if hasattr(self, 'variableCombo'):
+                    self.variableCombo.clear()
+                    self.variableCombo.addItem("无可用获取文本变量")
+                    self.variableCombo.setEnabled(False)
         
         def onLoopTypeChanged(self, index=None):
             """循环类型变化事件"""
@@ -977,6 +985,7 @@ class AutomationToolInterface(QWidget):
         self.fieldsComboBox.setPlaceholderText("选择字段")  # 简化占位文字
         self.fieldsComboBox.setFixedHeight(26)  # 进一步减小高度
         self.fieldsComboBox.setMinimumWidth(120)  # 减小最小宽度
+        self.fieldsComboBox.currentTextChanged.connect(self.onFieldsComboBoxChanged)
         loadAndFieldsLayout.addWidget(self.fieldsComboBox, 1)  # 增加拉伸因子
         
         # 清除表格按钮
@@ -1057,6 +1066,56 @@ class AutomationToolInterface(QWidget):
         configLayout.addLayout(configButtonsLayout)
         
         layout.addWidget(configGroup)
+        
+        # 执行结果配置区域
+        resultConfigGroup = CardWidget()
+        resultConfigGroup.setObjectName("resultConfigGroup")
+        resultConfigLayout = QVBoxLayout(resultConfigGroup)
+        resultConfigLayout.setContentsMargins(15, 15, 15, 15)
+        resultConfigLayout.setSpacing(10)
+        
+        resultConfigTitle = SubtitleLabel("执行结果配置")
+        resultConfigLayout.addWidget(resultConfigTitle)
+        
+        # 输出路径配置
+        outputPathLayout = QHBoxLayout()
+        outputPathLayout.setSpacing(10)
+        
+        outputPathLabel = QLabel("输出路径:")
+        outputPathLabel.setFixedWidth(80)
+        outputPathLayout.addWidget(outputPathLabel)
+        
+        self.outputPathEdit = LineEdit()
+        self.outputPathEdit.setPlaceholderText("请选择执行结果输出路径，不设置则使用默认路径")
+        self.outputPathEdit.setFixedHeight(28)
+        outputPathLayout.addWidget(self.outputPathEdit)
+        
+        self.browseOutputPathBtn = PushButton(FIF.FOLDER, "浏览")
+        self.browseOutputPathBtn.setFixedWidth(80)
+        self.browseOutputPathBtn.clicked.connect(self.onBrowseOutputPathBtnClicked)
+        outputPathLayout.addWidget(self.browseOutputPathBtn)
+        
+        resultConfigLayout.addLayout(outputPathLayout)
+        
+        # 输出方式配置
+        outputModeLayout = QHBoxLayout()
+        outputModeLayout.setSpacing(10)
+        
+        outputModeLabel = QLabel("输出方式:")
+        outputModeLabel.setFixedWidth(80)
+        outputModeLayout.addWidget(outputModeLabel)
+        
+        self.outputToFileCheck = CheckBox("输出到TXT文件")
+        self.outputToFileCheck.setChecked(True)
+        outputModeLayout.addWidget(self.outputToFileCheck)
+        
+        self.outputToTableCheck = CheckBox("输出到表格")
+        self.outputToTableCheck.setChecked(True)
+        outputModeLayout.addWidget(self.outputToTableCheck)
+        
+        resultConfigLayout.addLayout(outputModeLayout)
+        
+        layout.addWidget(resultConfigGroup)
         
         layout.addStretch()
         
@@ -1232,70 +1291,77 @@ class AutomationToolInterface(QWidget):
         
     def updateModuleList(self):
         """更新模块列表"""
-        # 保存当前选中的模块ID
-        selected_module_id = None
-        current_row = self.moduleTableWidget.currentRow()
-        if current_row >= 0:
-            name_item = self.moduleTableWidget.item(current_row, 1)
-            if name_item:
-                selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
-        
-        # 清空表格
-        self.moduleTableWidget.setRowCount(0)
-        
-        # 从模块管理器获取最新的模块列表（带正确顺序）
-        modules = self.automation_flow.module_manager.get_all_modules()
-        
-        # 添加所有模块到表格
-        for idx, module in enumerate(modules):
-            if module.module_id in self.module_cards:
-                card = self.module_cards[module.module_id]
-                
-                # 创建新行
-                self.moduleTableWidget.insertRow(idx)
-                
-                # 设置序号
-                index_item = QTableWidgetItem(str(idx + 1))
-                
-                # 设置模块名
-                name_item = QTableWidgetItem(card.nameEdit.text())
-                name_item.setData(Qt.ItemDataRole.UserRole, module.module_id)
-                
-                # 设置类型
-                type_item = QTableWidgetItem("条件模块" if hasattr(module, 'condition_type') else module.action_type)
-                
-                # 检查是否为条件模块，设置不同的颜色
-                is_dark = isDarkTheme()
-                if hasattr(module, 'condition_type'):
-                    # 条件模块，设置不同的背景颜色
-                    if is_dark:
-                        # 深色主题下的条件模块样式
-                        for item in [index_item, name_item, type_item]:
-                            item.setBackground(Qt.GlobalColor.darkGreen)
-                            item.setForeground(Qt.GlobalColor.white)
-                    else:
-                        # 浅色主题下的条件模块样式
-                        for item in [index_item, name_item, type_item]:
-                            item.setBackground(Qt.GlobalColor.lightGreen)
-                            item.setForeground(Qt.GlobalColor.darkGreen)
-                
-                # 添加到表格
-                self.moduleTableWidget.setItem(idx, 0, index_item)
-                self.moduleTableWidget.setItem(idx, 1, name_item)
-                self.moduleTableWidget.setItem(idx, 2, type_item)
-        
-        # 确定要选中的模块ID：优先使用current_module_id（新创建的模块），其次使用之前选中的模块ID
-        target_module_id = self.current_module_id if self.current_module_id else selected_module_id
-        
-        # 恢复选中状态
-        if target_module_id:
-            # 遍历表格查找对应的模块ID并选中
-            for row in range(self.moduleTableWidget.rowCount()):
-                name_item = self.moduleTableWidget.item(row, 1)
-                if name_item and name_item.data(Qt.ItemDataRole.UserRole) == target_module_id:
-                    self.moduleTableWidget.setCurrentCell(row, 0)
-                    self.moduleTableWidget.selectRow(row)
-                    break
+        try:
+            # 保存当前选中的模块ID
+            selected_module_id = None
+            current_row = self.moduleTableWidget.currentRow()
+            if current_row >= 0:
+                name_item = self.moduleTableWidget.item(current_row, 1)
+                if name_item:
+                    selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
+            
+            # 清空表格
+            self.moduleTableWidget.setRowCount(0)
+            
+            # 从模块管理器获取最新的模块列表（带正确顺序）
+            modules = self.automation_flow.module_manager.get_all_modules()
+            
+            # 添加所有模块到表格
+            for idx, module in enumerate(modules):
+                if module.module_id in self.module_cards:
+                    card = self.module_cards[module.module_id]
+                    
+                    # 创建新行
+                    self.moduleTableWidget.insertRow(idx)
+                    
+                    # 设置序号
+                    index_item = QTableWidgetItem(str(idx + 1))
+                    
+                    # 设置模块名
+                    name_item = QTableWidgetItem(card.nameEdit.text())
+                    name_item.setData(Qt.ItemDataRole.UserRole, module.module_id)
+                    
+                    # 设置类型
+                    type_item = QTableWidgetItem("条件模块" if hasattr(module, 'condition_type') else module.action_type)
+                    
+                    # 检查是否为条件模块，设置不同的颜色
+                    is_dark = isDarkTheme()
+                    if hasattr(module, 'condition_type'):
+                        # 条件模块，设置不同的背景颜色
+                        if is_dark:
+                            # 深色主题下的条件模块样式
+                            for item in [index_item, name_item, type_item]:
+                                item.setBackground(Qt.GlobalColor.darkGreen)
+                                item.setForeground(Qt.GlobalColor.white)
+                        else:
+                            # 浅色主题下的条件模块样式
+                            for item in [index_item, name_item, type_item]:
+                                item.setBackground(Qt.GlobalColor.lightGreen)
+                                item.setForeground(Qt.GlobalColor.darkGreen)
+                    
+                    # 添加到表格
+                    self.moduleTableWidget.setItem(idx, 0, index_item)
+                    self.moduleTableWidget.setItem(idx, 1, name_item)
+                    self.moduleTableWidget.setItem(idx, 2, type_item)
+            
+            # 确定要选中的模块ID：优先使用current_module_id（新创建的模块），其次使用之前选中的模块ID
+            target_module_id = self.current_module_id if self.current_module_id else selected_module_id
+            
+            # 恢复选中状态
+            if target_module_id:
+                # 遍历表格查找对应的模块ID并选中
+                for row in range(self.moduleTableWidget.rowCount()):
+                    name_item = self.moduleTableWidget.item(row, 1)
+                    if name_item and name_item.data(Qt.ItemDataRole.UserRole) == target_module_id:
+                        self.moduleTableWidget.setCurrentCell(row, 0)
+                        self.moduleTableWidget.selectRow(row)
+                        break
+        except Exception as e:
+            # 发生错误时，确保表格状态正确
+            try:
+                self.moduleTableWidget.setRowCount(0)
+            except Exception:
+                pass
     
     def updateTheme(self):
         """更新主题 - 更专业的样式设计"""
@@ -2068,60 +2134,72 @@ class AutomationToolInterface(QWidget):
     
     def addCondition(self):
         """添加条件模块"""
-        # 获取当前选中的行
-        current_row = self.moduleTableWidget.currentRow()
-        
-        # 计算要添加的位置
-        if current_row >= 0:
-            # 如果有选中行，获取选中模块ID
-            name_item = self.moduleTableWidget.item(current_row, 1)
-            if name_item:
-                selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
-                if selected_module_id:
-                    # 获取所有模块
-                    modules = self.automation_flow.module_manager.get_all_modules()
-                    # 查找选中模块的索引
-                    for i, module in enumerate(modules):
-                        if module.module_id == selected_module_id:
-                            # 在选中模块的下方添加新条件模块
-                            module = self.automation_flow.module_manager.add_condition_module("循环条件", i + 1)
-                            break
+        try:
+            # 获取当前选中的行
+            current_row = self.moduleTableWidget.currentRow()
+            
+            # 计算要添加的位置
+            if current_row >= 0:
+                # 如果有选中行，获取选中模块ID
+                name_item = self.moduleTableWidget.item(current_row, 1)
+                if name_item:
+                    selected_module_id = name_item.data(Qt.ItemDataRole.UserRole)
+                    if selected_module_id:
+                        # 获取所有模块
+                        modules = self.automation_flow.module_manager.get_all_modules()
+                        # 查找选中模块的索引
+                        for i, module in enumerate(modules):
+                            if module.module_id == selected_module_id:
+                                # 在选中模块的下方添加新条件模块
+                                module = self.automation_flow.module_manager.add_condition_module("循环条件", i + 1)
+                                break
+                        else:
+                            # 如果找不到选中模块，添加到末尾
+                            module = self.automation_flow.module_manager.add_condition_module("循环条件")
                     else:
-                        # 如果找不到选中模块，添加到末尾
                         module = self.automation_flow.module_manager.add_condition_module("循环条件")
                 else:
                     module = self.automation_flow.module_manager.add_condition_module("循环条件")
             else:
+                # 如果没有选中行，添加到末尾
                 module = self.automation_flow.module_manager.add_condition_module("循环条件")
-        else:
-            # 如果没有选中行，添加到末尾
-            module = self.automation_flow.module_manager.add_condition_module("循环条件")
-        
-        # 创建模块卡片
-        card = self.ConditionCard(module)
-        
-        # 连接信号
-        card.moduleUpdated.connect(self.onModuleUpdated)
-        card.moduleDeleted.connect(self.onModuleDeleted)
-        card.moduleMoved.connect(self.onModuleMoved)
-        
-        # 存储映射关系
-        self.module_cards[module.module_id] = card
-        
-        # 更新当前模块ID
-        self.current_module_id = module.module_id
-        
-        # 更新模块列表
-        self.updateModuleList()
-        
-        # 显示新模块的配置面板
-        if self.current_module_id in self.module_cards:
-            # 清空当前配置内容
-            self.clearConfigPanel()
             
-            # 添加新模块的配置卡片
-            card = self.module_cards[self.current_module_id]
-            self.configContentLayout.addWidget(card)
+            # 创建模块卡片
+            card = self.ConditionCard(module)
+            
+            # 连接信号
+            card.moduleUpdated.connect(self.onModuleUpdated)
+            card.moduleDeleted.connect(self.onModuleDeleted)
+            card.moduleMoved.connect(self.onModuleMoved)
+            
+            # 存储映射关系
+            self.module_cards[module.module_id] = card
+            
+            # 更新当前模块ID
+            self.current_module_id = module.module_id
+            
+            # 更新模块列表
+            self.updateModuleList()
+            
+            # 显示新模块的配置面板
+            if self.current_module_id in self.module_cards:
+                # 清空当前配置内容
+                self.clearConfigPanel()
+                
+                # 添加新模块的配置卡片
+                card = self.module_cards[self.current_module_id]
+                self.configContentLayout.addWidget(card)
+        except Exception as e:
+            # 发生错误时，显示错误信息但不崩溃
+            InfoBar.error(
+                title="错误",
+                content=f"添加条件模块时发生错误: {str(e)}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=3000,
+                parent=self
+            )
     
     def onModuleUpdated(self, module_id: str):
         """模块更新事件"""
@@ -2414,3 +2492,132 @@ class AutomationToolInterface(QWidget):
                 duration=2000,
                 parent=self
             )
+    
+    def onBrowseOutputPathBtnClicked(self):
+        """浏览输出路径按钮点击事件"""
+        path = QFileDialog.getExistingDirectory(self, "选择执行结果输出路径")
+        if path:
+            self.outputPathEdit.setText(path)
+    
+    def onFieldsComboBoxChanged(self, text):
+        """表格字段选择变化事件"""
+        self.automation_flow.set_selected_field(text)
+    
+    def handleExecutionResults(self):
+        """处理执行结果，根据配置输出到文件或表格"""
+        import os
+        import datetime
+        
+        try:
+            # 如果没有执行结果，直接返回
+            if not self.automation_flow.execution_results:
+                return
+            
+            # 构建输出路径
+            output_path = self.outputPathEdit.text().strip()
+            if not output_path:
+                # 使用默认路径（当前目录下的results文件夹）
+                output_path = os.path.join(os.getcwd(), "results")
+                os.makedirs(output_path, exist_ok=True)
+            
+            # 获取当前时间
+            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 如果输出到文件
+            if self.outputToFileCheck.isChecked():
+                # 构建文件名（使用固定文件名，每次追加）
+                file_name = f"execution_result.txt"
+                file_path = os.path.join(output_path, file_name)
+                
+                try:
+                    # 检查文件是否存在
+                    file_exists = os.path.exists(file_path)
+                    
+                    # 准备输出内容
+                    output_content = []
+                    
+                    # 如果文件不存在，添加表头
+                    if not file_exists:
+                        output_content.append(f"自动化执行结果 - {current_time}")
+                        output_content.append("=" * 50)
+                        output_content.append("时间;表格内容")
+                        output_content.append("-" * 50)
+                    
+                    # 添加每条记录的执行结果
+                    for result in self.automation_flow.execution_results:
+                        output_content.append(result)
+                    
+                    # 写入文件（追加模式）
+                    with open(file_path, 'a', encoding='utf-8') as f:
+                        f.write('\n'.join(output_content))
+                        f.write('\n')  # 每条记录后添加空行
+                    
+                    InfoBar.success(
+                        title="成功",
+                        content=f"执行结果已输出到文件: {file_path}",
+                        orient=Qt.Orientation.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP_RIGHT,
+                        duration=2000,
+                        parent=self
+                    )
+                except Exception as e:
+                    InfoBar.error(
+                        title="错误",
+                        content=f"输出执行结果到文件失败: {str(e)}",
+                        orient=Qt.Orientation.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP_RIGHT,
+                        duration=3000,
+                        parent=self
+                    )
+            
+            # 如果输出到表格
+            if self.outputToTableCheck.isChecked():
+                try:
+                    # 保存表格数据
+                    table_file_path = self.automation_flow.table_manager.file_path
+                    if table_file_path:
+                        if self.automation_flow.table_manager.save_table():
+                            InfoBar.success(
+                                title="成功",
+                                content="执行结果已更新到表格",
+                                orient=Qt.Orientation.Horizontal,
+                                isClosable=True,
+                                position=InfoBarPosition.TOP_RIGHT,
+                                duration=2000,
+                                parent=self
+                            )
+                        else:
+                            InfoBar.error(
+                                title="错误",
+                                content="保存表格数据失败",
+                                orient=Qt.Orientation.Horizontal,
+                                isClosable=True,
+                                position=InfoBarPosition.TOP_RIGHT,
+                                duration=3000,
+                                parent=self
+                            )
+                except Exception as e:
+                    InfoBar.error(
+                        title="错误",
+                        content=f"更新表格数据失败: {str(e)}",
+                        orient=Qt.Orientation.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP_RIGHT,
+                        duration=3000,
+                        parent=self
+                    )
+        except Exception as e:
+            InfoBar.error(
+                title="错误",
+                content=f"处理执行结果时发生错误: {str(e)}",
+                orient=Qt.Orientation.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=3000,
+                parent=self
+            )
+        finally:
+            # 清空执行结果列表，准备下次执行
+            self.automation_flow.execution_results.clear()

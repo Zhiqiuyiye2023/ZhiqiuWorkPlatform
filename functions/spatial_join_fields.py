@@ -121,7 +121,7 @@ class SpatialJoinFieldsFunction(BaseFunction):
         threshold_layout = QHBoxLayout()
         threshold_label = QLabel("重叠面积阈值：")
         self.threshold_spinbox = SpinBox(self)
-        self.threshold_spinbox.setValue(30)
+        self.threshold_spinbox.setValue(1)
         self.threshold_spinbox.setMinimum(0)
         self.threshold_spinbox.setMaximum(1000000)
         threshold_unit_label = QLabel("当重叠面积达到或超过此值时，挂接属性")
@@ -613,9 +613,14 @@ class SpatialJoinFieldsFunction(BaseFunction):
         unmatched_a = feature_a[~feature_a.index.isin(matched_indices)].copy()
         
         # 将未匹配成功的要素转换为与matched_a相同的列结构
-        for col in matched_a.columns:
-            if col not in unmatched_a.columns and col != 'geometry':
-                unmatched_a.loc[:, col] = None
+        if not unmatched_a.empty:
+            for col in matched_a.columns:
+                if col not in unmatched_a.columns and col != 'geometry':
+                    # 使用更安全的方式设置列值，避免空DataFrame的问题
+                    unmatched_a[col] = None
+        else:
+            # 如果unmatched_a为空，直接创建一个具有正确列结构的空GeoDataFrame
+            unmatched_a = gpd.GeoDataFrame(columns=matched_a.columns, crs=feature_a.crs)
         
         # 重新排列列顺序，确保一致
         unmatched_a = unmatched_a[matched_a.columns].copy()

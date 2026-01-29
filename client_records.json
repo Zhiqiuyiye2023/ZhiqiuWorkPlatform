@@ -1,0 +1,40 @@
+[
+  {
+    "ip": "192.168.100.35",
+    "computer_name": "DESKTOP-1ML7BCI",
+    "mac_address": "2c:fc:a2:30",
+    "device_info": "未知设备",
+    "connect_time": "2026-01-28 12:21:55",
+    "last_connect_time": "2026-01-29 11:50:34",
+    "status": "online",
+    "connect_count": 82
+  },
+  {
+    "ip": "192.168.241.129",
+    "computer_name": "MS-SQBNJJXCDHJO",
+    "mac_address": "29:f8:7e:95",
+    "device_info": "未知设备",
+    "connect_time": "2026-01-28 13:35:23",
+    "last_connect_time": "2026-01-28 17:39:12",
+    "status": "offline",
+    "connect_count": 2
+  },
+  {
+    "ip": "192.168.100.55",
+    "computer_name": "GDNCY",
+    "mac_address": "61:b4:e1:70",
+    "device_info": "未知设备",
+    "connect_time": "2026-01-28 17:42:10",
+    "last_connect_time": "2026-01-28 17:42:10",
+    "status": "offline"
+  },
+  {
+    "ip": "192.168.100.40",
+    "computer_name": "GDZM",
+    "mac_address": "00:27:cf:43",
+    "device_info": "未知设备",
+    "connect_time": "2026-01-28 17:58:38",
+    "last_connect_time": "2026-01-28 17:58:38",
+    "status": "offline"
+  }
+]

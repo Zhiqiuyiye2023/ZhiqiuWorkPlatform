@@ -422,6 +422,19 @@ class FunctionWidgetFactory:
                     TableMergeFunction = getattr(module, 'TableMergeFunction')
                     return TableMergeFunction()
             
+            elif app_id == 'land_flows_statistics':
+                # 耕园林流向一览表功能
+                try:
+                    from functions.land_flows_statistics import LandFlowsStatisticsFunction
+                    return LandFlowsStatisticsFunction()
+                except Exception as e:
+                    print(f"直接导入失败，尝试动态导入: {e}")
+                    # 动态导入
+                    import importlib
+                    module = importlib.import_module('functions.land_flows_statistics')
+                    LandFlowsStatisticsFunction = getattr(module, 'LandFlowsStatisticsFunction')
+                    return LandFlowsStatisticsFunction()
+            
             else:
                 print(f"未找到对应的功能模块: {app_id}")
                 return FunctionWidgetFactory._create_placeholder(app_id)
@@ -654,8 +667,28 @@ class AppFunctionManager:
             recent_manager.add_recent_app(app_id)
             print(f"尝试打开应用: {app_id}")
             
+            # 显示加载提示，避免用户误以为程序卡顿
+            loading_info = None
+            if parent:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                from PyQt6.QtCore import Qt
+                loading_info = InfoBar.info(
+                    title='正在加载',
+                    content=f'正在打开应用 {app_id}，请稍候...',
+                    orient=Qt.Orientation.Horizontal,
+                    isClosable=False,
+                    position=InfoBarPosition.TOP_RIGHT,
+                    parent=parent
+                )
+                # 强制刷新界面，确保提示显示
+                parent.repaint()
+            
             # 使用工厂类创建功能widget
             widget = FunctionWidgetFactory.create_widget(app_id)
+            
+            # 关闭加载提示
+            if loading_info:
+                loading_info.close()
             
             # 显示功能widget - 使用独立的弹窗窗口
             if widget:
@@ -704,12 +737,30 @@ class AppFunctionManager:
                 
                 cfg.themeChanged.connect(onDialogThemeChanged)
                 
+                # 将对话框居中显示
+                from PyQt6.QtWidgets import QApplication
+                
+                # 获取屏幕尺寸
+                desktop = QApplication.primaryScreen().availableGeometry()
+                
+                # 获取对话框尺寸
+                dialog_rect = dialog.frameGeometry()
+                
+                # 计算居中位置
+                center_point = desktop.center()
+                dialog_rect.moveCenter(center_point)
+                dialog.move(dialog_rect.topLeft())
+                
                 # 显示弹窗
                 dialog.exec()
             
             return widget
             
         except Exception as e:
+            # 关闭加载提示
+            if 'loading_info' in locals() and loading_info:
+                loading_info.close()
+            
             print(f"打开应用失败: {e}")
             import traceback
             traceback.print_exc()

@@ -270,11 +270,12 @@ class AppCardInterface(ScrollArea):
                 ('coords_to_shp', FIF.PIN, '坐标转SHP', '坐标点转矢量'),
             ]),
             # 数据分析类
-            ('analysis', '数据分析', [
-                ('file_table_compare', FIF.SEARCH, '表格比对', '比对Excel表格'),
-                ('trial_plan_summary', FIF.DOCUMENT, '试划成果统计', '管理边界面积计算'),
-                ('feature_check', FIF.CHECKBOX, '要素常规检查', '检查要素问题'),
-            ]),
+        ('analysis', '数据分析', [
+            ('file_table_compare', FIF.SEARCH, '表格比对', '比对Excel表格'),
+            ('trial_plan_summary', FIF.DOCUMENT, '试划成果统计', '管理边界面积计算'),
+            ('feature_check', FIF.CHECKBOX, '要素常规检查', '检查要素问题'),
+            ('land_flows_statistics', FIF.DOCUMENT, '耕林园流向统计', '统计耕地、林地、园地面积及流向情况'),
+        ]),
             # 文档工具类
             ('document', '文档工具', [
                 ('pdf_tools', FIF.DOCUMENT, 'PDF工具', 'PDF合并分离转换'),

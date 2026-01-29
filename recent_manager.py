@@ -76,6 +76,7 @@ class RecentAppsManager:
             'word_merge': 'Word文档合并',
             'table_merge': '表格合并',
             'gdb_merger': 'GDB合并',
+            'land_flows_statistics': '耕林园流向统计',
         }
         
         # 应用图标映射
@@ -121,6 +122,7 @@ class RecentAppsManager:
             'word_merge': 'DOCUMENT',
             'table_merge': 'DOCUMENT',
             'gdb_merger': 'FOLDER',
+            'land_flows_statistics': 'DOCUMENT',
         }
     
     def add_recent_app(self, app_id: str):

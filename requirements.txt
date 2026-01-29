@@ -37,8 +37,17 @@ Pillow>=10.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 
+# ========== Windows系统功能支持 ==========
+pywin32>=306
+
 # ========== 浏览器自动化 ==========
 DrissionPage>=4.0.0
-
+# ========== 服务器配置============
+Flask
+Flask-SQLAlchemy
+pyyaml
+pyngrok
+psutil
+pyqtgraph
 # ========== 打包工具 ==========
 pyinstaller>=6.0.0

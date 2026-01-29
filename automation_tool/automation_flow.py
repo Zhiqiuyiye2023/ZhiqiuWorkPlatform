@@ -19,15 +19,21 @@ class AutomationFlow(QObject):
     
     # 定义信号，用于向界面发送调试信息
     debug_info = pyqtSignal(str)
+    # 定义执行结果信号
+    executionResultReady = pyqtSignal()  # 执行结果准备好的信号
     
     def __init__(self):
-        """初始化自动化流程"""
+        """
+        初始化自动化流程
+        """
         super().__init__()
         self.browser = BrowserConnector()
         self.table_manager = TableDataManager()
         self.module_manager = ElementModuleManager()
         self.is_running = False
         self.is_paused = False
+        self.execution_results = []  # 存储每次执行的结果
+        self.selected_field = None  # 存储用户选择的字段
     
     def connect_browser(self) -> bool:
         """
@@ -55,6 +61,13 @@ class AutomationFlow(QObject):
         清除已加载的表格数据
         """
         self.table_manager.clear()
+    
+    def set_selected_field(self, field_name: str) -> None:
+        """
+        设置用户选择的字段
+        :param field_name: 字段名称
+        """
+        self.selected_field = field_name
     
     def start_automation(self) -> None:
         """
@@ -134,12 +147,40 @@ class AutomationFlow(QObject):
             
             # 执行所有元素模块
             success = self.module_manager.execute_all(page, record)
+            
+            # 获取当前时间
+            current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 添加执行结果到记录
+            record['执行状态'] = '成功' if success else '失败'
+            record['执行时间'] = current_time
+            
+            # 生成单条记录的输出结果（仅包含时间和表格内容）
+            # 只输出用户选择的字段内容
+            if self.selected_field and self.selected_field in record:
+                # 只输出选择的字段内容
+                record_value = str(record[self.selected_field])
+                single_result = f"{current_time};{record_value}"
+            else:
+                # 输出所有字段内容
+                record_values = ';'.join([str(value) for value in record.values()])
+                single_result = f"{current_time};{record_values}"
+            
+            # 存储单条记录的输出结果
+            self.execution_results.append(single_result)
+            
+            # 发送调试信息
             if success:
                 self.debug_info.emit(f"第 {current_record}/{total_records} 条记录处理成功")
+                self.debug_info.emit(f"执行结果: {single_result}")
             else:
-                self.debug_info.emit(f"第 {current_record}/{total_records} 条记录处理失败: {record}")
+                self.debug_info.emit(f"第 {current_record}/{total_records} 条记录处理失败")
+                self.debug_info.emit(f"执行结果: {single_result}")
                 # 可以选择继续处理下一条或停止
                 # 这里选择继续处理下一条
+            
+            # 发送执行结果准备好的信号
+            self.executionResultReady.emit()
         
         self.is_running = False
         self.debug_info.emit("\n自动化流程结束")

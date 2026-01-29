@@ -282,24 +282,25 @@ class FeatureIntersectionFunction(BaseFunction):
     def _selectSourceFile(self, shp_only=False, gdb_only=False):
         """选择源矢量文件"""
         if shp_only:
-            # 选择SHP文件
-            file_path, _ = QFileDialog.getOpenFileName(
+            # 选择SHP文件，支持多选
+            file_paths, _ = QFileDialog.getOpenFileNames(
                 self, 
                 "选择SHP文件", 
                 "", 
                 "Shapefile文件 (*.shp);;所有文件 (*.*)"
             )
-            if file_path:
-                self.source_path.setText(file_path)
-                # 隐藏图层选择
-                for i in range(self.source_layer_layout.count()):
-                    widget = self.source_layer_layout.itemAt(i).widget()
-                    if widget:
-                        widget.setVisible(False)
-                # 设置默认输出路径
-                self._set_default_output_path(file_path)
-                # 直接添加到列表
-                self._addToLayerList()
+            for file_path in file_paths:
+                if file_path:
+                    self.source_path.setText(file_path)
+                    # 隐藏图层选择
+                    for i in range(self.source_layer_layout.count()):
+                        widget = self.source_layer_layout.itemAt(i).widget()
+                        if widget:
+                            widget.setVisible(False)
+                    # 设置默认输出路径
+                    self._set_default_output_path(file_path)
+                    # 直接添加到列表
+                    self._addToLayerList()
         elif gdb_only:
             # 选择GDB文件
             file_path = QFileDialog.getExistingDirectory(
@@ -330,8 +331,8 @@ class FeatureIntersectionFunction(BaseFunction):
         self.field_preserve_combo.clear()
         
         # 创建选项列表和对应的选项数据列表
-        options = ["保留所有字段"]
-        option_data = ["all"]
+        options = ["保留所有字段", "不保留任何字段"]
+        option_data = ["all", "none"]
         
         # 添加每个图层作为选项
         for i, layer_info in enumerate(self.layers_info):
@@ -824,14 +825,18 @@ class FeatureIntersectionFunction(BaseFunction):
         # 存储要保留的字段列表
         preserve_fields = None
         if field_preserve_option != "all":
-            # 如果指定了要保留的图层，先获取该图层的字段
-            preserve_layer = layers_info[field_preserve_option]
-            if preserve_layer['is_gdb']:
-                preserve_gdf = gpd.read_file(preserve_layer['path'], layer=preserve_layer['layer'])
+            if field_preserve_option == "none":
+                # 不保留任何字段
+                preserve_fields = []
             else:
-                preserve_gdf = gpd.read_file(preserve_layer['path'])
-            # 只保留非几何字段
-            preserve_fields = [col for col in preserve_gdf.columns if col != 'geometry']
+                # 如果指定了要保留的图层，先获取该图层的字段
+                preserve_layer = layers_info[field_preserve_option]
+                if preserve_layer['is_gdb']:
+                    preserve_gdf = gpd.read_file(preserve_layer['path'], layer=preserve_layer['layer'])
+                else:
+                    preserve_gdf = gpd.read_file(preserve_layer['path'])
+                # 只保留非几何字段
+                preserve_fields = [col for col in preserve_gdf.columns if col != 'geometry']
         
         # 依次与后续图层相交
         for i in range(1, len(layers_info)):
@@ -862,17 +867,44 @@ class FeatureIntersectionFunction(BaseFunction):
             self.update_progress_signal.emit(20 + i * 70 // len(layers_info), f"正在将第{i+1}个图层与结果相交...")
             
             # 执行相交操作
-            result_gdf = gpd.overlay(result_gdf, current_gdf, how='intersection')
+            try:
+                result_gdf = gpd.overlay(result_gdf, current_gdf, how='intersection')
+            except Exception as e:
+                # 处理列名冲突问题
+                if 'duplicate columns' in str(e) or 'suffixes' in str(e):
+                    # 为当前图层的列名添加唯一后缀，避免冲突
+                    current_gdf_copy = current_gdf.copy()
+                    # 为非几何列添加唯一后缀
+                    unique_suffix = f'_layer{i+1}'
+                    for col in current_gdf_copy.columns:
+                        if col != 'geometry':
+                            current_gdf_copy.rename(columns={col: f'{col}{unique_suffix}'}, inplace=True)
+                    # 使用重命名后的图层重新执行相交操作
+                    result_gdf = gpd.overlay(result_gdf, current_gdf_copy, how='intersection')
+                else:
+                    # 其他错误则抛出
+                    raise
             
             # 检查结果是否为空
             if result_gdf.empty:
-                raise ValueError(f"第{i+1}个图层 {layer_name} 与之前的相交结果没有重叠区域")
+                # 不抛出异常，只返回提示信息
+                self.update_progress_signal.emit(100, f"第{i+1}个图层 {layer_name} 与之前的相交结果没有重叠区域")
+                result_msg = f"执行多图层相交完成\n"
+                result_msg += f"参与相交的图层数量: {len(layers_info)}\n"
+                result_msg += f"在第{i+1}个图层 {layer_name} 处，与之前的相交结果没有重叠区域\n"
+                result_msg += f"最终相交结果数量: 0\n"
+                return result_msg
         
         # 保存输出文件前处理字段保留
         if preserve_fields is not None:
-            self.update_progress_signal.emit(85, f"正在保留第{field_preserve_option+1}个图层的字段...")
-            # 确保geometry字段始终保留
-            final_columns = ['geometry'] + [col for col in preserve_fields if col in result_gdf.columns]
+            if field_preserve_option == "none":
+                self.update_progress_signal.emit(85, "正在移除所有属性字段...")
+                # 只保留geometry字段
+                final_columns = ['geometry']
+            else:
+                self.update_progress_signal.emit(85, f"正在保留第{field_preserve_option+1}个图层的字段...")
+                # 确保geometry字段始终保留
+                final_columns = ['geometry'] + [col for col in preserve_fields if col in result_gdf.columns]
             result_gdf = result_gdf[final_columns]
         
         # 保存输出文件
@@ -887,6 +919,8 @@ class FeatureIntersectionFunction(BaseFunction):
         # 添加字段保留信息
         if field_preserve_option == "all":
             result_msg += f"字段保留选项: 保留所有字段\n"
+        elif field_preserve_option == "none":
+            result_msg += f"字段保留选项: 不保留任何字段\n"
         else:
             result_msg += f"字段保留选项: 仅保留第{field_preserve_option+1}个图层的字段\n"
         
